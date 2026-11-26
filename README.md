@@ -27,7 +27,7 @@
 上流の更新を取り込みやすいように、`core/` への変更は小さく保ちます。
 
 - スキルの本文は訳さず、Cursor の語彙のまま使う。エージェントごとの違いは `core/docs/harness/` の対応表で吸収する。
-- 日本語の文章を推敲するときだけ、`unslop` から `yomiyasu` に、`technical-writing` から `japanese-tech-writing` と `yomiyasu` に回す。
+- 日本語の文章だけは、`unslop` から `yomiyasu` に、`technical-writing` から `japanese-tech-writing`（書く）と `yomiyasu`（推敲する）に回す。
 - プラグイン名は `mochystack` にしている。
 
 ## ライセンス
