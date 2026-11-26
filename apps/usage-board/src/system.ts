@@ -30,13 +30,19 @@ function readMemoryPressure(): Promise<string> {
   });
 }
 
+const cpuWindowMs = 5000;
+
 export function createSystemProbe(): { sample(): Promise<SystemView> } {
-  let previous = cpus().map((cpu) => cpu.times);
+  let previous = { atMs: Date.now(), times: cpus().map((cpu) => cpu.times) };
+  let cpuBusy: number | null = null;
   return {
     async sample() {
-      const current = cpus().map((cpu) => cpu.times);
-      const cpuBusy = cpuBusyPercentage(previous, current);
-      previous = current;
+      const nowMs = Date.now();
+      if (nowMs - previous.atMs >= cpuWindowMs) {
+        const times = cpus().map((cpu) => cpu.times);
+        cpuBusy = cpuBusyPercentage(previous.times, times);
+        previous = { atMs: nowMs, times };
+      }
       return { memoryUsedPercentage: memoryUsedPercentage(await readMemoryPressure()), cpuBusyPercentage: cpuBusy };
     },
   };

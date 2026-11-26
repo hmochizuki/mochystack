@@ -29,7 +29,12 @@ function crowdedBoard(nowMs: number): Board {
     generatedAtMs: nowMs,
     timeZone: "Asia/Tokyo",
     system: { memoryUsedPercentage: 40, cpuBusyPercentage: 10 },
-    rateLimits: { status: "unavailable", reason: "synthetic" },
+    rateLimits: {
+      status: "available",
+      capturedAtMs: nowMs,
+      fiveHour: { state: "active", usedPercentage: 100, resetsAtMs: nowMs + 299 * minuteMs },
+      sevenDay: { state: "active", usedPercentage: 3, resetsAtMs: nowMs + 6 * 24 * 60 * minuteMs },
+    },
     usage: {
       status: "ready",
       summary: {
@@ -234,14 +239,21 @@ test(
           document.querySelector("main").dataset.probe = "before-refresh";
           const live = document.querySelector(".live");
           live.scrollTop = 120;
+          const limits = document.querySelector(".limits").getBoundingClientRect();
+          const escaped = [...document.querySelectorAll(".limits *:not(svg *)")].filter((element) => {
+            const box = element.getBoundingClientRect();
+            return box.width > 0 && (box.right > limits.right + 0.5 || box.left < limits.left - 0.5 || box.bottom > limits.bottom + 0.5);
+          }).length;
           const right = Math.max(...[...document.querySelectorAll(".dial, .figure")].map((element) => element.getBoundingClientRect().right));
-          return { scrollTop: live.scrollTop, right, overflowX: document.documentElement.scrollWidth - innerWidth, overflowY: document.documentElement.scrollHeight - innerHeight };
+          return { scrollTop: live.scrollTop, right, escaped, dials: document.querySelectorAll(".dial").length, overflowX: document.documentElement.scrollWidth - innerWidth, overflowY: document.documentElement.scrollHeight - innerHeight };
         })()`,
       );
       assert.ok(isObject(layout));
       assert.equal(numberAt(layout, "scrollTop"), 120);
       assert.equal(numberAt(layout, "overflowX"), 0, "横にはみ出さない");
       assert.equal(numberAt(layout, "overflowY"), 0, "縦にはみ出さない");
+      assert.equal(numberAt(layout, "dials"), 2);
+      assert.equal(numberAt(layout, "escaped"), 0, "左の列の中身が列の外に出ない");
       const right = numberAt(layout, "right");
       assert.ok(right !== undefined && right <= 667, "計器と今日の金額が画面の中にある");
       await waitUntilTrue(cdp, `document.querySelector("main").dataset.probe === undefined && document.body.dataset.offline === "false"`);

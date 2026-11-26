@@ -99,7 +99,7 @@ function systemPanel(board: Board): string {
 function limitsPanel(board: Board): string {
   const { rateLimits } = board;
   if (rateLimits.status === "unavailable") {
-    return `<section class="panel limits">${clockFace(board)}<div class="dials"><div><p class="lead">残りを取得できません</p><p class="note">${escapeHtml(rateLimits.reason)}</p></div></div>${systemPanel(board)}</section>`;
+    return `<section class="panel limits">${clockFace(board)}<div class="dials"><div class="unavailable"><p class="lead">残りを取得できません</p><p class="note">${escapeHtml(rateLimits.reason)}</p></div></div>${systemPanel(board)}</section>`;
   }
   const age = board.generatedAtMs - rateLimits.capturedAtMs;
   return `<section class="panel limits">
@@ -128,10 +128,11 @@ function usagePanel(board: Board): string {
   const today = days.at(-1);
   const maxCost = Math.max(...days.map((day) => day.totals.costUsd));
   const unpriced = [...new Set(days.flatMap((day) => day.totals.unpricedModels))];
-  const hint = `API の定価で換算した推定額${unpriced.length > 0 ? `。単価不明: ${unpriced.join(", ")}（含めていない）` : ""}`;
+  const hint = "API の定価で換算した推定額";
   return `<section class="panel usage">
 <p class="figure" title="${escapeHtml(hint)}"><span class="unit">今日</span><strong>${today ? costLabel(today.totals) : "-"}</strong></p>
 <ol class="spark" aria-label="${days.length}日間の金額">${days.map((day) => sparkBar(day, maxCost, day === today)).join("")}</ol>
+${unpriced.length > 0 ? `<p class="note">単価不明: ${escapeHtml(unpriced.join(", "))}（金額に含めていない）</p>` : ""}
 </section>`;
 }
 
@@ -156,7 +157,7 @@ const style = `
 *{box-sizing:border-box}
 html,body{height:100%}
 body{margin:0;background:var(--dial);color:var(--text);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;-webkit-font-smoothing:antialiased;overflow:hidden}
-main{height:100dvh;display:grid;grid-template-columns:288px minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);padding:0 max(env(safe-area-inset-right),8px) 0 max(env(safe-area-inset-left),8px)}
+main{height:100dvh;display:grid;grid-template-columns:288px minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);padding:env(safe-area-inset-top) max(env(safe-area-inset-right),8px) env(safe-area-inset-bottom) max(env(safe-area-inset-left),8px)}
 .panel{min-width:0;padding:14px 12px}
 .limits{grid-row:1/3;display:flex;flex-direction:column;padding-bottom:10px;border-right:1px solid var(--line)}
 .usage{grid-column:2;grid-row:1;padding-bottom:10px;border-bottom:1px solid var(--line);margin:0 4px}
@@ -183,6 +184,7 @@ p{margin:0}
 .spark li[data-today="true"] span{background:var(--lume);box-shadow:0 0 6px color-mix(in srgb,var(--lume) 60%,transparent)}
 .sessions{list-style:none;margin:0;padding:0}
 .lead{font-size:18px;margin-bottom:4px}
+.unavailable{grid-column:1/-1}
 .dial .note{font:300 13px/1.3 var(--numeral);color:var(--muted);font-variant-numeric:tabular-nums}
 .reading strong{font:200 40px/1 var(--numeral);font-variant-numeric:tabular-nums;letter-spacing:-.03em}
 .value{display:inline-flex;align-items:flex-start}
@@ -241,10 +243,8 @@ setInterval(async () => {
     const main = next.querySelector("main");
     if (main === null) throw new Error("unexpected page");
     const current = document.querySelector("main");
-    const scrollLeft = current.scrollLeft;
     const scrollTops = new Map(Array.from(current.querySelectorAll(".panel"), (panel) => [panel.className, panel.scrollTop]));
     current.replaceWith(main);
-    main.scrollLeft = scrollLeft;
     for (const panel of main.querySelectorAll(".panel")) panel.scrollTop = scrollTops.get(panel.className) ?? 0;
     tick();
     document.body.dataset.offline = "false";

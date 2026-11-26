@@ -101,11 +101,11 @@ test("制限が取得できないときは理由を出し、数字を出さな�
   assert.doesNotMatch(html, /<strong>\d+<\/strong><span class="pct">/);
 });
 
-test("今日の金額を出し、日ごとの金額と単価不明のモデルは触れたときだけ出す", () => {
+test("今日の金額と単価不明のモデルを出し、日ごとの金額は棒の title にだけ入れる", () => {
   const html = renderPage(board({}));
   assert.match(html, /<strong>\$40\.00\+<\/strong>/);
   assert.match(html, /title="[^"]*\$12\.50/);
-  assert.match(html, /title="[^"]*単価不明: claude-unknown-9/);
+  assert.match(html, />単価不明: claude-unknown-9（金額に含めていない）</);
   assert.doesNotMatch(html, /1\.5M/);
   assert.doesNotMatch(html, /<table/);
   assert.doesNotMatch(html, /日間で/);
@@ -121,9 +121,11 @@ test("セッションの名前や待っている内容は HTML として解釈�
   const base = board({});
   const [session] = base.live;
   assert.ok(session !== undefined);
-  const html = renderPage({ ...base, live: [{ ...session, name: "<script>alert(1)</script>" }] });
+  const html = renderPage({ ...base, live: [{ ...session, name: "<script>alert(1)</script>", waitingFor: "<img src=x onerror=alert(2)>" }] });
   assert.doesNotMatch(html, /<script>alert/);
   assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+  assert.doesNotMatch(html, /<img src=x/);
+  assert.match(html, /&lt;img src=x onerror=alert\(2\)&gt;/);
 });
 
 test("入力待ちのセッションは名前と待っている内容を出し、実行中は件数だけを出す", () => {
