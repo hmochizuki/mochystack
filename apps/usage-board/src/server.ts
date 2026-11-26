@@ -1,20 +1,34 @@
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { createServer, type Server, type ServerResponse } from "node:http";
 import { isIPv6 } from "node:net";
 import { networkInterfaces } from "node:os";
 import type { Board } from "./board.ts";
-import { renderPage } from "./render.ts";
 
 export type ServerOptions = {
   board: { snapshot(nowMs: number): Promise<Board> };
+  uiFile: string;
   host: string;
   port: number;
   allowedHosts: string[];
 };
 
-function send(response: ServerResponse, status: number, contentType: string, body: string): void {
+type Reply = { contentType: string; body: string | Buffer };
+
+function send(response: ServerResponse, status: number, contentType: string, body: string | Buffer): void {
   response.writeHead(status, { "content-type": contentType, "cache-control": "no-store" });
   response.end(body);
 }
+
+function json(value: unknown): Reply {
+  return { contentType: "application/json; charset=utf-8", body: JSON.stringify(value) };
+}
+
+const routes = new Map<string, (options: ServerOptions) => Promise<Reply>>([
+  ["/", async (options) => ({ contentType: "text/html; charset=utf-8", body: await readFile(options.uiFile) })],
+  ["/api/board", async (options) => json(await options.board.snapshot(Date.now()))],
+  ["/api/ui-version", async (options) => json({ version: createHash("sha256").update(await readFile(options.uiFile)).digest("hex") })],
+]);
 
 function hostnameOf(host: string): string | undefined {
   try {
@@ -42,8 +56,8 @@ export function startServer(options: ServerOptions): Promise<Server> {
       send(response, 403, "text/plain; charset=utf-8", "この Host では応答しない。使う名前を USAGE_BOARD_ALLOWED_HOSTS に足す");
       return;
     }
-    const path = new URL(request.url ?? "/", "http://localhost").pathname;
-    if (path !== "/" && path !== "/api/board") {
+    const route = routes.get(new URL(request.url ?? "/", "http://localhost").pathname);
+    if (route === undefined) {
       send(response, 404, "text/plain; charset=utf-8", "not found");
       return;
     }
@@ -51,11 +65,8 @@ export function startServer(options: ServerOptions): Promise<Server> {
       send(response, 405, "text/plain; charset=utf-8", "method not allowed");
       return;
     }
-    options.board.snapshot(Date.now()).then(
-      (board) =>
-        path === "/"
-          ? send(response, 200, "text/html; charset=utf-8", renderPage(board))
-          : send(response, 200, "application/json; charset=utf-8", JSON.stringify(board)),
+    route(options).then(
+      (reply) => send(response, 200, reply.contentType, reply.body),
       (error: unknown) => send(response, 500, "text/plain; charset=utf-8", String(error)),
     );
   });
