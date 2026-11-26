@@ -58,7 +58,7 @@ Codex has no folder of rules that it loads into every session, so `setup-pstack`
 | `~/.cursor/plugins/`, `.cursor-plugin/plugin.json` | `$CODEX_HOME/plugins/cache/`, `.codex-plugin/plugin.json` |
 | `.cursor/rules/*.mdc`, always-applied rules | `AGENTS.md`. Codex loads `$CODEX_HOME/AGENTS.md` and each `AGENTS.md` from the repository root down to the working folder. Codex never reads `.mdc` files. The model rule is the exception. See Models. |
 | `https://github.com/cursor/plugins/blob/main/pstack/<path>` | `<pstack>/<path>` when that file exists. The plugin ships the skills, `agents/`, `docs/guide/`, and `README.md`. Read the local copy and never fetch it. Give the user the URL when they need a link. |
-| Transcripts in `~/.cursor/projects/<slug>/agent-transcripts/` | `$CODEX_HOME/sessions/<YYYY>/<MM>/<DD>/rollout-<time>-<thread id>.jsonl`, one file per thread across all workspaces. The first line has `"type":"session_meta"`, and its `payload.cwd` is the workspace, so read only files whose `cwd` is this workspace. The newest of those is the current session. A subagent's file names its parent in `payload.parent_thread_id`. |
+| Transcripts in `~/.cursor/projects/<slug>/agent-transcripts/` | `$CODEX_HOME/sessions/<YYYY>/<MM>/<DD>/rollout-<time>-<thread id>.jsonl`, one file per thread across all workspaces. The first line has `"type":"session_meta"`, and its `payload.cwd` is the workspace, so read only files whose `cwd` is this workspace. The newest of those is the current session. A subagent's file names its parent in `payload.source.subagent.thread_spawn.parent_thread_id`. |
 
 ## Cursor-only features
 
@@ -77,6 +77,6 @@ Source files are in `openai/codex` at tag `rust-v0.144.1`, under `https://github
 
 - Subagent tools, their fields, and the rule that a skill must ask for subagents: `core/src/tools/handlers/multi_agents_spec.rs`. Built-in roles `default`, `worker`, and `explorer`: `core/src/agent/role.rs`. Agent roles load only from `agents/` beside a `config.toml`, not from plugins: `core/src/config/agent_roles.rs`. Subagents inherit the parent's sandbox: https://learn.chatgpt.com/docs/agent-configuration/subagents
 - `request_user_input` modes: `tools/src/tool_config.rs`. `update_plan`: `core/src/tools/handlers/plan_spec.rs`.
-- Skill folders, frontmatter, and the `agents/openai.yaml` policy: `core-skills/src/loader.rs` and https://learn.chatgpt.com/docs/build-skills. A plugin's skills are named `<plugin>:<skill>`: `core-skills/src/loader/namespace.rs`.
+- Skill folders, frontmatter, and the `agents/openai.yaml` policy: `core-skills/src/loader.rs` and https://learn.chatgpt.com/docs/build-skills. A plugin's skills are named `<plugin>:<skill>`: `core-skills/src/loader/namespace.rs`. A `$<plugin>:<skill>` mention selects from every enabled skill, explicit-only ones included: `core/src/session/turn.rs`.
 - Plugin manifest paths: `utils/plugins/src/plugin_namespace.rs`. Marketplace paths: `core-plugins/src/marketplace.rs`. Plugin cache: `core-plugins/src/store.rs`. Plugins and marketplaces: https://developers.openai.com/plugins/build/plugins
 - `AGENTS.md`: `core/src/agents_md.rs`. Session files: `rollout/src/recorder.rs` and the `SessionMeta` type in `protocol/src/protocol.rs`.
