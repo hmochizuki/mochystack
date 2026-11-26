@@ -6,6 +6,8 @@ disable-model-invocation: true
 
 # Unslop
 
+日本語の文章には、このスキルの規則を当てない。yomiyasu スキル（`yomiyasu:yomiyasu`）の手順で推敲する。このスキルの規則は英語の文章を前提にしている。
+
 Edit text to remove AI patterns. Scan for the patterns below, then rewrite. Preserve meaning and match the intended tone.
 
 Rule numbers are stable ids that other skills cite. A removed rule leaves a gap.
