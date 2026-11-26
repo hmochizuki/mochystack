@@ -244,7 +244,9 @@ setInterval(async () => {
     const main = next.querySelector("main");
     const updated = next.querySelector("#updated");
     if (main === null || updated === null) throw new Error("unexpected page");
+    const scrollTops = new Map(Array.from(document.querySelectorAll(".panel"), (panel) => [panel.className, panel.scrollTop]));
     document.querySelector("main").replaceWith(main);
+    for (const panel of main.querySelectorAll(".panel")) panel.scrollTop = scrollTops.get(panel.className) ?? 0;
     document.querySelector("#updated").replaceWith(updated);
     document.body.dataset.offline = "false";
   } catch {
