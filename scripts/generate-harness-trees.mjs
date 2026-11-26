@@ -9,18 +9,18 @@ const PSTACK = join(ROOT, "core");
 const SKILLS = join(PSTACK, "skills");
 // Outside core/ so Cursor, which copies the whole plugin folder, does not install this tree too.
 const OUT = join(ROOT, "dist");
-const TREE = "claude-code";
-const ADAPTER = "docs/harness/claude-code.md";
+const HARNESSES = [
+  { name: "Claude Code", tree: "claude-code", adapter: "docs/harness/claude-code.md", manifests: ["plugin.json", ".claude-plugin/plugin.json"] },
+];
 const GUIDE = "docs/guide";
-const MANIFESTS = ["plugin.json", ".claude-plugin/plugin.json"];
 const COMMAND = "node scripts/generate-harness-trees.mjs";
 const GITHUB = "https://github.com/cursor/plugins";
 const LINK = /\]\(([^)\s]+)\)/g;
 const README = `# harness trees
 
-This folder is generated from \`core/skills\`, \`core/agents\`, \`core/${GUIDE}\`, \`core/${ADAPTER}\`, \`core/README.md\`, \`core/LICENSE\`, and \`core/plugin.json\`. Do not edit it by hand.
+This folder is generated from \`core/skills\`, \`core/agents\`, \`core/${GUIDE}\`, \`core/docs/harness/claude-code.md\`, \`core/README.md\`, \`core/LICENSE\`, and \`core/plugin.json\`. Do not edit it by hand.
 
-Cursor uses \`core/\` directly, and Claude Code installs \`${TREE}/\`. The tree leaves out the rest of \`core/\`, such as \`core/automations\` and \`core/assets\`. A relative link to a core file that the tree leaves out points at that file on GitHub \`main\` instead.
+Cursor uses \`core/\` directly, and Claude Code installs \`claude-code/\`. The tree leaves out the rest of \`core/\`, such as \`core/automations\` and \`core/assets\`. A relative link to a core file that the tree leaves out points at that file on GitHub \`main\` instead.
 
 After editing those sources, run \`${COMMAND}\` from the repository root and commit the result.
 `;
@@ -96,9 +96,11 @@ for (const [skill, { usesCursorNames, wrap }] of classes) {
   if (name !== skill) problems.push(`skills/${skill}/SKILL.md has name ${JSON.stringify(name ?? "")}, not its folder name ${skill}`);
   if (!SKILL_NAME.test(skill) || skill.length > 64) problems.push(`skills/${skill} is not lowercase words joined by hyphens, at most 64 characters`);
 }
-const adapter = readFileSync(join(PSTACK, ADAPTER), "utf8");
-for (const [key, using] of users) {
-  if (!adapter.includes(key)) problems.push(`Claude Code adapter has no row for ${key}, used by ${using.join(", ")}`);
+for (const { name, adapter } of HARNESSES) {
+  const rows = readFileSync(join(PSTACK, adapter), "utf8");
+  for (const [key, using] of users) {
+    if (!rows.includes(key)) problems.push(`${name} adapter has no row for ${key}, used by ${using.join(", ")}`);
+  }
 }
 for (const problem of problems) console.log(`FAIL ${problem}`);
 if (problems.length > 0) process.exit(1);
@@ -115,26 +117,26 @@ function has(files, path) {
   return files.has(path) || [...files.keys()].some((key) => key.startsWith(`${path}/`));
 }
 
-function render() {
-  // Skills read the adapter, the guide, and the README at runtime, so Claude Code never fetches them.
+function render({ name, adapter, manifests }) {
+  // Skills read the adapter, the guide, and the README at runtime, so the harness never fetches them.
   const copies = [
     ...walk(SKILLS),
     ...walk(join(PSTACK, "agents")),
     ...walk(join(PSTACK, GUIDE)),
-    join(PSTACK, ADAPTER),
+    join(PSTACK, adapter),
     join(PSTACK, "README.md"),
   ];
   const files = new Map(copies.map((path) => [relative(PSTACK, path), file(path)]));
   const line =
-    `In Claude Code, read [the Claude Code adapter](../../${ADAPTER}) once per session before you follow this skill. ` +
-    "It maps the Cursor names in pstack skills to Claude Code.";
+    `In ${name}, read [the ${name} adapter](../../${adapter}) once per session before you follow this skill. ` +
+    `It maps the Cursor names in pstack skills to ${name}.`;
   for (const [skill, { wrap }] of classes) {
     const path = `skills/${skill}/SKILL.md`;
     const text = files.get(path).bytes.toString("utf8");
     if (wrap) files.get(path).bytes = Buffer.from(text.replace(/^(# .*)\n+/m, `$1\n\n${line}\n\n`));
   }
   files.set("LICENSE", file(join(PSTACK, "LICENSE")));
-  for (const manifest of MANIFESTS) files.set(manifest, file(join(PSTACK, "plugin.json")));
+  for (const manifest of manifests) files.set(manifest, file(join(PSTACK, "plugin.json")));
   for (const [path, entry] of files) {
     if (!path.endsWith(".md")) continue;
     const text = entry.bytes.toString("utf8").replace(LINK, (link, href) => {
@@ -148,17 +150,19 @@ function render() {
   return files;
 }
 
-// Claude Code installs only the tree, so a relative link that works from pstack/ has to work inside the tree too.
+// Each harness installs only its tree, so a relative link that works from pstack/ has to work inside the tree too.
 // Links to pstack files that the tree leaves out already point at GitHub, so a failure here is a link that leaves pstack/.
-const files = render();
 const rendered = new Map([["README.md", { bytes: Buffer.from(README), executable: false }]]);
 const dangling = [];
-for (const [path, entry] of files) {
-  rendered.set(`${TREE}/${path}`, entry);
-  if (!path.endsWith(".md")) continue;
-  for (const [, href] of entry.bytes.toString("utf8").matchAll(LINK)) {
-    const target = resolve(path, href);
-    if (target && !has(files, target)) dangling.push(`dist/${TREE}/${path} links to ${href}, which is not in the tree`);
+for (const harness of HARNESSES) {
+  const files = render(harness);
+  for (const [path, entry] of files) {
+    rendered.set(`${harness.tree}/${path}`, entry);
+    if (!path.endsWith(".md")) continue;
+    for (const [, href] of entry.bytes.toString("utf8").matchAll(LINK)) {
+      const target = resolve(path, href);
+      if (target && !has(files, target)) dangling.push(`dist/${harness.tree}/${path} links to ${href}, which is not in the tree`);
+    }
   }
 }
 for (const link of dangling) console.log(`FAIL ${link}`);
