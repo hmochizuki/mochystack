@@ -14,3 +14,23 @@ jobs:
         with:
           node-version: 22
       - run: node scripts/generate-harness-trees.mjs --check
+      - run: node --test 'scripts/*.test.mjs'
+
+  usage-board:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/usage-board
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/usage-board/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm run typecheck
