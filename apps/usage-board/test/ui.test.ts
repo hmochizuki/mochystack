@@ -5,6 +5,7 @@ import { after, before, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import type { Board } from "../src/board.ts";
 import { isObject, numberAt } from "../src/json.ts";
+import type { LiveSession } from "../src/live.ts";
 import { startServer } from "../src/server.ts";
 import type { UsageTotals } from "../src/usage.ts";
 import { chromePath, evaluate, launchChrome, waitUntilTrue, type Cdp, type Chrome } from "./chrome.ts";
@@ -13,9 +14,24 @@ import { tempDir } from "./fixtures.ts";
 const bundledUiFile = fileURLToPath(new URL("../public/board.html", import.meta.url));
 const now = Date.parse("2026-11-26T03:00:00.000Z");
 const minuteMs = 60_000;
+const hourMs = 60 * minuteMs;
 
 function totals(costUsd: number, unpricedModels: string[] = []): UsageTotals {
   return { tokens: { input: 1000, output: 2000, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 1_500_000 }, costUsd, unpricedModels };
+}
+
+function liveSession(index: number, name: string | null, status: string, waitingFor: string | null, nowMs: number): LiveSession {
+  return {
+    pid: index + 1,
+    sessionId: `session-${index}`,
+    name,
+    project: "sample-project",
+    status,
+    waitingFor,
+    startedAtMs: nowMs - 60 * minuteMs,
+    statusUpdatedAtMs: nowMs - minuteMs,
+    subagents: [],
+  };
 }
 
 function board(overrides: Partial<Board>): Board {
@@ -49,14 +65,7 @@ function board(overrides: Partial<Board>): Board {
     },
     live: [
       {
-        pid: 1,
-        sessionId: "s1",
-        name: "sample-session",
-        project: "sample-project",
-        status: "waiting",
-        waitingFor: "input needed",
-        startedAtMs: now - 60 * minuteMs,
-        statusUpdatedAtMs: now - 2 * minuteMs,
+        ...liveSession(0, "sample-session", "waiting", "input needed", now),
         subagents: [
           {
             agentId: "a1",
@@ -74,7 +83,6 @@ function board(overrides: Partial<Board>): Board {
 }
 
 function crowdedBoard(nowMs: number): Board {
-  const dayTotals = totals(1.5);
   return {
     generatedAtMs: nowMs,
     timeZone: "Asia/Tokyo",
@@ -83,28 +91,57 @@ function crowdedBoard(nowMs: number): Board {
       status: "available",
       capturedAtMs: nowMs,
       fiveHour: { state: "active", usedPercentage: 100, resetsAtMs: nowMs + 299 * minuteMs },
-      sevenDay: { state: "active", usedPercentage: 3, resetsAtMs: nowMs + 6 * 24 * 60 * minuteMs },
+      sevenDay: { state: "active", usedPercentage: 3, resetsAtMs: nowMs + 6 * 24 * hourMs },
     },
-    usage: {
-      status: "ready",
-      summary: {
-        days: Array.from({ length: 14 }, (_, index) => ({ date: `2026-11-${index + 10}`, totals: dayTotals })),
-        sessions: [],
-      },
-    },
-    live: Array.from({ length: 40 }, (_, index) => ({
-      pid: index + 1,
-      sessionId: `session-${index}`,
-      name: `sample session ${index}`,
-      project: "sample-project",
-      status: "waiting",
-      waitingFor: `permission needed ${index}`,
-      startedAtMs: nowMs - 60 * minuteMs,
-      statusUpdatedAtMs: nowMs - minuteMs,
-      subagents: [],
-    })),
+    usage: { status: "loading" },
+    live: Array.from({ length: 40 }, (_, index) => liveSession(index, `sample session ${index}`, "waiting", `permission needed ${index}`, nowMs)),
   };
 }
+
+const scenarioNow = Date.parse("2026-11-26T10:54:00.000Z");
+const threeWaiting: Array<[string, string]> = [
+  ["api-refactor", "テストの書き換えを続けてよいか"],
+  ["billing-fix", "本番の DB に繋いでよいか"],
+  ["docs-site", "見出しの案を選んでほしい"],
+];
+const fiveWaiting: Array<[string, string]> = [
+  ["api-refactor", "テストの書き換えを続けるか、先に型の定義を直すべきか"],
+  ["billing-fix", "本番の DB に繋いで、移行のスクリプトを流してよいか"],
+  ["docs-site", "見出しの案を3つ作ったので、どれにするか選んでほしい"],
+  ["shinsei-list", "一覧の並び順を、日付と状態のどちらにするか決めてほしい"],
+  ["vrt-approval", "差分のある画面が12枚あるので、承認してよいか見てほしい"],
+];
+const eightRunning = ["mochystack", "craft-training", "shinsei-list", "keihi-app", "vrt-approval", "custom-scenario", "settings-app", "kashidashi-app"];
+const sixRunning = ["mochystack", "craft-training", "keihi-app", "custom-scenario", "settings-app", "kashidashi-app"];
+
+function scenario(usedPercentage: number, waiting: Array<[string, string]>, running: string[]): Board {
+  return {
+    generatedAtMs: scenarioNow,
+    timeZone: "Asia/Tokyo",
+    system: { memoryUsedPercentage: 55, cpuBusyPercentage: 23 },
+    rateLimits: {
+      status: "available",
+      capturedAtMs: scenarioNow - minuteMs,
+      fiveHour: { state: "active", usedPercentage, resetsAtMs: Date.parse("2026-11-26T15:00:00.000Z") },
+      sevenDay: { state: "active", usedPercentage: 77, resetsAtMs: Date.parse("2026-11-27T21:00:00.000Z") },
+    },
+    usage: { status: "ready", summary: { days: [{ date: "2026-11-26", totals: totals(40) }], sessions: [] } },
+    live: [
+      ...waiting.map(([name, waitingFor], index) => liveSession(index, name, "waiting", waitingFor, scenarioNow)),
+      ...running.map((name, index) => liveSession(waiting.length + index, name, "busy", null, scenarioNow)),
+    ],
+  };
+}
+
+const scenarios: Array<{ name: string; board: Board }> = [
+  { name: "5時間枠を20%使った", board: scenario(20, threeWaiting, eightRunning) },
+  { name: "5時間枠を43%使った", board: scenario(43, threeWaiting, eightRunning) },
+  { name: "5時間枠を90%使った", board: scenario(90, threeWaiting, eightRunning) },
+  { name: "5時間枠を98%使った", board: scenario(98, threeWaiting, eightRunning) },
+  { name: "入力待ちが5件で内容が長い", board: scenario(43, fiveWaiting, sixRunning) },
+  { name: "入力待ちが無い", board: scenario(43, [], eightRunning) },
+  { name: "入力待ちも実行中も無い", board: scenario(43, [], []) },
+];
 
 const testHooks = `(() => {
   const params = new URLSearchParams(location.search);
@@ -138,6 +175,57 @@ async function serve(uiFile: string, snapshot: Source): Promise<{ url: string; c
     },
   };
 }
+
+function numbersOrNulls(value: unknown): Array<number | null> {
+  assert.ok(Array.isArray(value));
+  const items: unknown[] = value;
+  return items.map((item) => {
+    assert.ok(item === null || typeof item === "number");
+    return item;
+  });
+}
+
+function assertNear(actual: Array<number | null>, expected: Array<number | null>, label: string): void {
+  assert.equal(actual.length, expected.length, label);
+  actual.forEach((value, index) => {
+    const want = expected[index];
+    if (want === null || want === undefined || value === null) assert.equal(value, want ?? null, label);
+    else assert.ok(Math.abs(value - want) < 0.3, `${label}: ${value} は ${want} に近くない`);
+  });
+}
+
+const gaugeReadings = `(part) => [...document.querySelectorAll(".plan")].map((plan) => {
+  const hub = plan.querySelector(".hub");
+  if (hub === null) return null;
+  const cx = Number(hub.getAttribute("cx"));
+  const cy = Number(hub.getAttribute("cy"));
+  const reading = (x, y) => 100 * (1 - Math.atan2(cy - y, x - cx) / Math.PI);
+  if (part === "needle") {
+    const needle = plan.querySelector(".needle");
+    if (needle === null) return null;
+    const [x, y] = needle.getAttribute("points").split(" ")[0].split(",").map(Number);
+    return reading(x, y);
+  }
+  const pace = plan.querySelector(".pace");
+  return pace === null ? null : reading(Number(pace.getAttribute("x2")), Number(pace.getAttribute("y2")));
+})`;
+
+const layoutProbe = `(() => {
+  const outside = [...document.querySelectorAll("main, main *")].filter((element) => {
+    const box = element.getBoundingClientRect();
+    return box.width > 0 && (box.left < -0.5 || box.top < -0.5 || box.right > innerWidth + 0.5 || box.bottom > innerHeight + 0.5);
+  }).length;
+  const sessions = document.querySelector(".sessions");
+  const plans = document.querySelector(".plans").getBoundingClientRect();
+  const mac = document.querySelector(".mac").getBoundingClientRect();
+  return {
+    outside,
+    hiddenSessions: sessions.scrollHeight - sessions.clientHeight,
+    footerGap: mac.left - plans.right,
+    overflowX: document.documentElement.scrollWidth - innerWidth,
+    overflowY: document.documentElement.scrollHeight - innerHeight,
+  };
+})()`;
 
 describe("画面", { skip: chromePath === undefined && "Chrome が見つからない" }, () => {
   let chrome: Chrome;
@@ -189,25 +277,56 @@ describe("画面", { skip: chromePath === undefined && "Chrome が見つから�
     return value;
   }
 
+  async function texts(selector: string): Promise<unknown> {
+    return evaluate(cdp, `[...document.querySelectorAll(${JSON.stringify(selector)})].map((element) => element.textContent)`);
+  }
+
   async function count(selector: string): Promise<number> {
     const value = await evaluate(cdp, `document.querySelectorAll(${JSON.stringify(selector)}).length`);
     assert.ok(typeof value === "number");
     return value;
   }
 
-  test("5時間枠は残りの割合とリセットまでの時間だけを出し、取得から15分以内なら取得の時刻を出さない", async () => {
+  test("5時間枠と週の枠は、残りの割合とリセットの時刻を出し、リセットを過ぎた枠は 100 にする", async () => {
     await show(board({}));
-    assert.equal(await text(".dial .reading strong"), "83");
-    assert.equal(await evaluate(cdp, `document.querySelector(".dial [role=meter]").getAttribute("aria-valuenow")`), "83");
-    const main = await text("main");
-    assert.match(main, /あと 1:01/);
-    assert.doesNotMatch(main, /13:01/);
-    assert.doesNotMatch(main, /取得/);
-    assert.doesNotMatch(main, /\d+:\d+ 更新/);
-    assert.equal(await evaluate(cdp, `document.querySelector(".dial").title`), "11/26 13:01 にリセット");
+    assert.deepEqual(await texts(".plan .label"), ["5時間枠", "週の枠"]);
+    assert.deepEqual(await texts(".plan .reset"), ["↻ 13:01", "↻ 11/26 11:59"]);
+    assert.deepEqual(await texts(".plan .reading"), ["83%", "100%"]);
+    assert.deepEqual(await evaluate(cdp, `[...document.querySelectorAll(".plan")].map((plan) => plan.getAttribute("aria-valuenow"))`), ["83", "100"]);
+    assert.equal(await count(".plan .pace"), 1, "リセットを過ぎた枠にはペースの線を出さない");
+    assert.doesNotMatch(await text("main"), /リセット済み|取得|あと/);
   });
 
-  test("取得から15分を過ぎた残りは、いつのデータかを出す", async () => {
+  test("針は残りを指し、白い線は枠の時間を均等に使ったときの残りを指す", async () => {
+    await show(scenario(43, threeWaiting, eightRunning));
+    assertNear(numbersOrNulls(await evaluate(cdp, `(${gaugeReadings})("needle")`)), [57, 23], "針");
+    assertNear(numbersOrNulls(await evaluate(cdp, `(${gaugeReadings})("pace")`)), [(246 / 300) * 100, ((34 * 60 + 6) / (7 * 24 * 60)) * 100], "ペースの線");
+  });
+
+  test("残りが15%以下の枠は、針と数字を淡い赤にする", async () => {
+    await show(scenario(85, threeWaiting, eightRunning));
+    const low = `[...document.querySelectorAll(".plan")].map((plan) => [getComputedStyle(plan.querySelector(".reading")).color, getComputedStyle(plan.querySelector(".needle")).fill])`;
+    const lowColor = "rgb(255, 143, 112)";
+    const normal = "rgb(242, 237, 228)";
+    assert.deepEqual(await evaluate(cdp, low), [
+      [lowColor, lowColor],
+      [normal, "rgb(246, 241, 232)"],
+    ]);
+    await show(scenario(84, threeWaiting, eightRunning));
+    assert.deepEqual(await evaluate(cdp, `${low}[0]`), [normal, "rgb(246, 241, 232)"]);
+  });
+
+  test("空は上から暗い赤で、5時間枠を使った割合の高さで青に変わる", async () => {
+    const boundaryAt = (used: number) => `getComputedStyle(document.querySelector("main")).backgroundImage.includes("rgb(29, 36, 56) ${used}%")`;
+    for (const used of [20, 43, 98]) {
+      await show(scenario(used, threeWaiting, eightRunning));
+      assert.equal(await evaluate(cdp, boundaryAt(used)), true, `${used}%`);
+    }
+    await show(board({ rateLimits: { status: "unavailable", reason: "statusline のファイルが無い" } }));
+    assert.equal(await evaluate(cdp, boundaryAt(0)), true, "取得できないときは赤を出さない");
+  });
+
+  test("取得から15分を過ぎた残りは、いつのデータかを出し、値の無い枠は - にする", async () => {
     await show(
       board({
         rateLimits: {
@@ -219,100 +338,94 @@ describe("画面", { skip: chromePath === undefined && "Chrome が見つから�
       }),
     );
     assert.equal(await text("[data-stale=true]"), "20分前のデータ");
-    assert.match(await text("main"), /値なし/);
+    assert.deepEqual(await texts(".plan .reading"), ["83%", "-"]);
+    assert.deepEqual(await texts(".plan .reset"), ["↻ 13:01"]);
+    assert.deepEqual(numbersOrNulls(await evaluate(cdp, `(${gaugeReadings})("needle")`)).map((value) => value === null), [false, true]);
   });
 
-  test("リセット時刻を過ぎた枠は使用率を出さずにリセット済みと出す", async () => {
+  test("取得から15分以内なら、いつのデータかを出さない", async () => {
     await show(board({}));
-    assert.match(await text("main"), /リセット済み/);
-    assert.equal(await count(".dial .reading strong"), 1);
+    assert.equal(await count("[data-stale]"), 0);
   });
 
-  test("制限が取得できないときは理由を出し、数字を出さない", async () => {
+  test("制限が取得できないときは、両方の計器を - にし、理由の文は出さない", async () => {
     await show(board({ rateLimits: { status: "unavailable", reason: "statusline のファイルが無い" } }));
-    assert.equal(await text(".unavailable .lead"), "残りを取得できません");
-    assert.equal(await text(".unavailable .note"), "statusline のファイルが無い");
-    assert.equal(await count(".dial"), 0);
+    assert.deepEqual(await texts(".plan .label"), ["5時間枠", "週の枠"]);
+    assert.deepEqual(await texts(".plan .reading"), ["-", "-"]);
+    assert.equal(await count(".plan .reset, .plan .needle, .plan .pace"), 0);
+    assert.doesNotMatch(await text("main"), /statusline|取得できません/);
   });
 
-  test("今日の金額と単価不明のモデルを出し、日ごとの金額は棒の title にだけ入れる", async () => {
+  test("金額とトークン数は出さない", async () => {
     await show(board({}));
-    assert.equal(await text(".figure strong"), "$40.00+");
-    assert.deepEqual(await evaluate(cdp, `[...document.querySelectorAll(".spark li")].map((bar) => bar.title)`), [
-      "11/25（水） $12.50",
-      "11/26（木） $40.00+",
-    ]);
-    assert.equal(await count(".spark li[data-today=true]"), 1);
-    assert.equal(await text(".usage .note"), "単価不明: claude-unknown-9（金額に含めていない）");
-    const main = await text("main");
-    assert.doesNotMatch(main, /1\.5M|日間で|推定額|\$12\.50/);
-    assert.equal(await count("main table"), 0);
-  });
-
-  test("集計中は使用量の代わりに集計中と出す", async () => {
+    assert.doesNotMatch(await text("main"), /\$|集計中|単価不明|1\.5M|トークン/);
     await show(board({ usage: { status: "loading" } }));
-    assert.equal(await text(".figure strong"), "集計中");
+    assert.doesNotMatch(await text("main"), /集計中/);
   });
 
-  test("入力待ちのセッションは名前と待っている内容を出し、実行中は件数だけを出す", async () => {
-    const base = board({});
-    const [session] = base.live;
-    assert.ok(session !== undefined);
+  test("入力待ちのセッションを先に名前と待っている内容で出し、実行中のセッションは次の行から名前だけを出す", async () => {
     await show({
-      ...base,
+      ...board({}),
       live: [
-        session,
-        { ...session, pid: 2, sessionId: "s2", name: "busy-session", status: "busy", waitingFor: null },
-        { ...session, pid: 3, sessionId: "s3", name: null, project: null, status: "waiting", waitingFor: null },
-        { ...session, pid: 4, sessionId: "s4", name: "resting-session", status: "idle", waitingFor: null },
+        liveSession(1, "busy-one", "busy", null, now),
+        liveSession(2, "sample-session", "waiting", "input needed", now),
+        liveSession(3, null, "waiting", null, now),
+        liveSession(4, "resting-session", "idle", null, now),
+        liveSession(5, "busy-two", "busy", null, now),
+        liveSession(6, "odd-session", "unknown", null, now),
       ],
     });
-    assert.equal(await text(".busy"), "1 実行中");
-    assert.deepEqual(await evaluate(cdp, `[...document.querySelectorAll(".sessions > li")].map((row) => row.textContent)`), [
-      "sample-sessioninput needed",
-      "s3",
-    ]);
-    assert.doesNotMatch(await text("main"), /busy-session|resting-session|worker-one|サブエージェント|分前|ほか/);
+    assert.deepEqual(await texts(".sessions > li"), ["sample-sessioninput needed", "sample-project", "busy-one", "busy-two"]);
+    assert.deepEqual(await texts(".sessions > .waiting .waiting-for"), ["input needed"]);
+    const rows = await evaluate(
+      cdp,
+      `(() => {
+        const boxes = [...document.querySelectorAll(".sessions > li")].map((item) => item.getBoundingClientRect());
+        return { firstLeft: boxes[0].left, runningLeft: boxes[2].left, waitingBottom: Math.max(boxes[0].bottom, boxes[1].bottom), runningTop: boxes[2].top, secondRunningTop: boxes[3].top };
+      })()`,
+    );
+    assert.ok(isObject(rows));
+    assert.equal(numberAt(rows, "runningLeft"), numberAt(rows, "firstLeft"), "実行中は1列目から始まる");
+    assert.ok((numberAt(rows, "runningTop") ?? 0) >= (numberAt(rows, "waitingBottom") ?? Infinity), "実行中は入力待ちの下の行に出る");
+    assert.equal(numberAt(rows, "secondRunningTop"), numberAt(rows, "runningTop"), "実行中どうしは同じ行に並ぶ");
+    assert.doesNotMatch(await text("main"), /resting-session|odd-session|worker-one|件|実行中|入力待ち/);
+  });
+
+  test("セッションが無いときは、何も書かない", async () => {
+    await show(board({ live: [] }));
+    assert.equal(await count(".sessions > *"), 0);
+    assert.equal(await text(".sessions"), "");
   });
 
   test("時計と、Mac のメモリと CPU の使用率を出す", async () => {
     await show(board({}));
     assert.equal(await text("#clock"), "12:00");
-    assert.equal(await text(".clock .date"), "11/26(木)");
-    assert.deepEqual(await evaluate(cdp, `[...document.querySelectorAll(".meter")].map((meter) => meter.textContent)`), ["メモリ54%", "CPU30%"]);
+    assert.deepEqual(await texts(".mac .label"), ["メモリ", "CPU"]);
+    assert.deepEqual(await texts(".mac strong"), ["54%", "30%"]);
   });
 
   test("メモリと CPU が取れないときは値の代わりに - を出す", async () => {
     await show(board({ system: { memoryUsedPercentage: null, cpuBusyPercentage: null } }));
-    assert.deepEqual(await evaluate(cdp, `[...document.querySelectorAll(".meter strong")].map((value) => value.textContent)`), ["-", "-"]);
+    assert.deepEqual(await texts(".mac strong"), ["-", "-"]);
   });
 
-  test("セッションの名前、待っている内容、単価不明のモデル名、取れない理由は HTML として解釈させない", async () => {
+  test("セッションの名前と待っている内容は HTML として解釈させない", async () => {
     const payload = `<img src=x onerror="window.pwned=1"><script>window.pwned=2</script>`;
-    const base = board({});
-    const [session] = base.live;
-    assert.ok(session !== undefined);
-    for (const next of [
-      {
-        ...base,
-        live: [{ ...session, name: payload, waitingFor: payload }],
-        usage: { status: "ready" as const, summary: { days: [{ date: "2026-11-26", totals: totals(1, [payload]) }], sessions: [] } },
-      },
-      { ...base, rateLimits: { status: "unavailable" as const, reason: payload } },
-    ]) {
-      await show(next);
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      assert.equal(await count("main img, main script"), 0);
-      assert.equal(await evaluate(cdp, `window.pwned ?? null`), null);
-      assert.ok((await text("main")).includes(payload));
-    }
+    await show({
+      ...board({}),
+      live: [liveSession(1, payload, "waiting", payload, now), liveSession(2, payload, "busy", null, now)],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.equal(await count("main img, main script"), 0);
+    assert.equal(await evaluate(cdp, `window.pwned ?? null`), null);
+    assert.deepEqual(await texts(".sessions > li"), [`${payload}${payload}`, payload]);
   });
 
   test("定期的に /api/board を読み直して描き直し、そのあいだ画面を読み込み直さない", async () => {
     await show(board({}), { query: "intervalMs=200" });
     await evaluate(cdp, `window.reloadProbe = "kept"`);
-    source = async () => board({ usage: { status: "ready", summary: { days: [{ date: "2026-11-26", totals: totals(7) }], sessions: [] } } });
-    await waitUntilTrue(cdp, `document.querySelector(".figure strong").textContent === "$7.00"`);
+    source = async () => board({ system: { memoryUsedPercentage: 54, cpuBusyPercentage: 77 } });
+    await waitUntilTrue(cdp, `document.querySelectorAll(".mac strong")[1].textContent === "77%"`);
     assert.equal(await evaluate(cdp, `window.reloadProbe`), "kept");
   });
 
@@ -322,11 +435,11 @@ describe("画面", { skip: chromePath === undefined && "Chrome が見つから�
       throw new Error("down");
     };
     await waitUntilTrue(cdp, `document.body.dataset.offline === "true"`);
-    assert.equal(await evaluate(cdp, `getComputedStyle(document.querySelector(".limits"), "::after").content`), `"更新できません"`);
-    assert.equal(await count(".dial"), 2);
+    assert.equal(await evaluate(cdp, `getComputedStyle(document.querySelector(".notice"), "::after").content`), `"更新できません"`);
+    assert.equal(await count(".plan"), 2);
     source = async () => board({});
     await waitUntilTrue(cdp, `document.body.dataset.offline === "false"`);
-    assert.equal(await evaluate(cdp, `getComputedStyle(document.querySelector(".limits"), "::after").content`), "none");
+    assert.equal(await evaluate(cdp, `getComputedStyle(document.querySelector(".notice"), "::after").content`), "none");
   });
 
   test("/api/board が応答を返さないときも、待ちきれなければ更新できませんと出す", async () => {
@@ -341,23 +454,23 @@ describe("画面", { skip: chromePath === undefined && "Chrome が見つから�
     };
     await visit();
     await waitUntilTrue(cdp, `document.body.dataset.offline === "true"`);
-    assert.equal(await evaluate(cdp, `getComputedStyle(document.querySelector(".limits"), "::after").content`), `"更新できません"`);
+    assert.equal(await evaluate(cdp, `getComputedStyle(document.querySelector(".notice"), "::after").content`), `"更新できません"`);
   });
 
   test("時計は画面の中で進め、更新できないあいだも止めない", async () => {
-    const twoHoursAgo = Date.now() - 120 * minuteMs;
+    const twoHoursAgo = Date.now() - 2 * hourMs;
     await show(board({ generatedAtMs: twoHoursAgo }), { query: "intervalMs=200" });
     source = async () => {
       throw new Error("down");
     };
     await waitUntilTrue(
       cdp,
-      `document.body.dataset.offline === "true" && document.querySelector("#clock").textContent === new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(Date.now())`,
+      `document.body.dataset.offline === "true" && document.querySelector("#clock").textContent === new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", hour: "numeric", minute: "2-digit", hourCycle: "h23" }).format(Date.now())`,
     );
   });
 
   for (const viewport of [tablet, phoneLandscape]) {
-    test(`${viewport.width}×${viewport.height} で描き直しても、入力待ちの一覧のスクロール位置を保つ`, async () => {
+    test(`${viewport.width}×${viewport.height} で描き直しても、セッションの一覧のスクロール位置を保つ`, async () => {
       let snapshots = 0;
       source = async (nowMs) => {
         snapshots += 1;
@@ -368,37 +481,33 @@ describe("画面", { skip: chromePath === undefined && "Chrome が見つから�
       const before = await evaluate(
         cdp,
         `(() => {
-          document.querySelector(".live").scrollTop = 120;
-          return document.querySelectorAll(".meter strong")[1].textContent;
+          document.querySelector(".sessions").scrollTop = 120;
+          return document.querySelectorAll(".mac strong")[1].textContent;
         })()`,
       );
-      await waitUntilTrue(cdp, `document.querySelectorAll(".meter strong")[1].textContent !== ${JSON.stringify(before)}`);
-      assert.equal(await evaluate(cdp, `document.querySelector(".live").scrollTop`), 120);
+      await waitUntilTrue(cdp, `document.querySelectorAll(".mac strong")[1].textContent !== ${JSON.stringify(before)}`);
+      assert.equal(await evaluate(cdp, `document.querySelector(".sessions").scrollTop`), 120);
+      const layout = await evaluate(cdp, layoutProbe);
+      assert.ok(isObject(layout));
+      assert.equal(numberAt(layout, "overflowX"), 0, "横にはみ出さない");
+      assert.equal(numberAt(layout, "overflowY"), 0, "縦にはみ出さない");
     });
   }
 
-  test("iPhone SE の横向きで1画面に収まり、左の列の中身が列の外に出ない", async () => {
-    await show(crowdedBoard(now), { viewport: phoneLandscape });
-    const layout = await evaluate(
-      cdp,
-      `(() => {
-        const limits = document.querySelector(".limits").getBoundingClientRect();
-        const escaped = [...document.querySelectorAll(".limits *:not(svg *)")].filter((element) => {
-          const box = element.getBoundingClientRect();
-          return box.width > 0 && (box.right > limits.right + 0.5 || box.left < limits.left - 0.5 || box.bottom > limits.bottom + 0.5);
-        }).length;
-        const right = Math.max(...[...document.querySelectorAll(".dial, .figure")].map((element) => element.getBoundingClientRect().right));
-        return { right, escaped, dials: document.querySelectorAll(".dial").length, overflowX: document.documentElement.scrollWidth - innerWidth, overflowY: document.documentElement.scrollHeight - innerHeight };
-      })()`,
-    );
-    assert.ok(isObject(layout));
-    assert.equal(numberAt(layout, "overflowX"), 0, "横にはみ出さない");
-    assert.equal(numberAt(layout, "overflowY"), 0, "縦にはみ出さない");
-    assert.equal(numberAt(layout, "dials"), 2);
-    assert.equal(numberAt(layout, "escaped"), 0, "左の列の中身が列の外に出ない");
-    const right = numberAt(layout, "right");
-    assert.ok(right !== undefined && right <= 667, "計器と今日の金額が画面の中にある");
-  });
+  for (const viewport of [phoneLandscape, tablet]) {
+    for (const { name, board: next } of scenarios) {
+      test(`${viewport.width}×${viewport.height} で${name}ときも、1画面に収まり、どの要素も画面の外に出ない`, async () => {
+        await show(next, { viewport });
+        const layout = await evaluate(cdp, layoutProbe);
+        assert.ok(isObject(layout));
+        assert.equal(numberAt(layout, "overflowX"), 0, "横にはみ出さない");
+        assert.equal(numberAt(layout, "overflowY"), 0, "縦にはみ出さない");
+        assert.equal(numberAt(layout, "outside"), 0, "画面の外に出る要素が無い");
+        assert.equal(numberAt(layout, "hiddenSessions"), 0, "セッションがスクロールしないで全部見える");
+        assert.ok((numberAt(layout, "footerGap") ?? -1) > 0, "計器とメモリ・CPU が重ならない");
+      });
+    }
+  }
 
   test("UI のファイルを書き換えると、開いている画面が自分で読み込み直す", async () => {
     const uiFile = join(await tempDir("ui"), "board.html");
