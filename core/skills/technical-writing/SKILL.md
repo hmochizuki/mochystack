@@ -6,6 +6,8 @@ disable-model-invocation: true
 
 # Technical writing
 
+日本語の文章には、このスキルの規則を当てない。japanese-tech-writing スキルに従って書き、仕上げに yomiyasu スキル（`yomiyasu:yomiyasu`）で推敲する。このスキルの規則は英語の文章を前提にしている。
+
 Write so a tired engineer understands on the first read.
 
 - Cut every word that does no work.
