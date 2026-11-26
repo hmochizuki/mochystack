@@ -67,7 +67,7 @@ function board(overrides: Partial<Board>): Board {
 
 test("5時間枠は残りの割合、リセットまでの時間、リセットの時刻を出す", () => {
   const html = renderPage(board({}));
-  assert.match(html, /残り\s*<strong[^>]*>83%<\/strong>/);
+  assert.match(html, /残り<\/span><strong>83%<\/strong>/);
   assert.match(html, /リセットまで 1時間1分/);
   assert.match(html, /13:01/);
   assert.match(html, /3分前に取得/);
@@ -82,15 +82,16 @@ test("制限が取得できないときは理由を出し、数字を出さな�
   const html = renderPage(board({ rateLimits: { status: "unavailable", reason: "statusline のファイルが無い" } }));
   assert.match(html, /取得できません/);
   assert.match(html, /statusline のファイルが無い/);
-  assert.doesNotMatch(html, /残り\s*<strong/);
+  assert.doesNotMatch(html, /残り<\/span><strong/);
 });
 
-test("日ごとの金額とトークン、単価不明のモデルを出す", () => {
+test("今日の金額、日ごとの金額、単価不明のモデルを出し、トークン数と24時間のセッションの表は出さない", () => {
   const html = renderPage(board({}));
   assert.match(html, /\$40\.00/);
   assert.match(html, /\$12\.50/);
-  assert.match(html, /1\.5M/);
   assert.match(html, /単価不明: claude-unknown-9/);
+  assert.doesNotMatch(html, /1\.5M/);
+  assert.doesNotMatch(html, /<table/);
 });
 
 test("集計中は使用量の代わりに集計中と出す", () => {
@@ -98,17 +99,31 @@ test("集計中は使用量の代わりに集計中と出す", () => {
   assert.match(html, /集計中/);
 });
 
-test("セッションの題名などは HTML として解釈させない", () => {
-  const html = renderPage(board({}));
+test("セッションの名前や待っている内容は HTML として解釈させない", () => {
+  const base = board({});
+  const [session] = base.live;
+  assert.ok(session !== undefined);
+  const html = renderPage({ ...base, live: [{ ...session, name: "<script>alert(1)</script>" }] });
   assert.doesNotMatch(html, /<script>alert/);
   assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
 });
 
-test("動いているセッションは状態、待っている内容、サブエージェントの状態を出す", () => {
+test("入力待ちと実行中のセッションは状態と待っている内容を出し、サブエージェントは件数だけを出す", () => {
   const html = renderPage(board({}));
   assert.match(html, /入力待ち/);
   assert.match(html, /input needed/);
-  assert.match(html, /worker-one/);
-  assert.match(html, /実行中/);
-  assert.match(html, /20秒前/);
+  assert.match(html, /サブエージェント 1/);
+  assert.doesNotMatch(html, /worker-one/);
+});
+
+test("待機中などのセッションは一覧に出さず、件数だけを出す", () => {
+  const base = board({});
+  const [session] = base.live;
+  assert.ok(session !== undefined);
+  const html = renderPage({
+    ...base,
+    live: [session, { ...session, pid: 2, sessionId: "s2", name: "resting-session", status: "idle", waitingFor: null, subagents: [] }],
+  });
+  assert.doesNotMatch(html, /resting-session/);
+  assert.match(html, /ほか 1件/);
 });

@@ -189,15 +189,62 @@ test(
         cdp,
         `(() => {
           document.querySelector("main").dataset.probe = "before-refresh";
-          const panels = [...document.querySelectorAll(".usage, .live")];
+          const panels = [...document.querySelectorAll(".live")];
           for (const panel of panels) panel.scrollTop = 200;
           return panels.map((panel) => panel.scrollTop);
         })()`,
       );
-      assert.deepEqual(scrolled, [200, 200]);
+      assert.deepEqual(scrolled, [200]);
       await waitUntilTrue(cdp, `document.querySelector("main").dataset.probe === undefined && document.body.dataset.offline === "false"`);
-      const refreshed = await evaluate(cdp, `[...document.querySelectorAll(".usage, .live")].map((panel) => panel.scrollTop)`);
-      assert.deepEqual(refreshed, [200, 200]);
+      const refreshed = await evaluate(cdp, `[...document.querySelectorAll(".live")].map((panel) => panel.scrollTop)`);
+      assert.deepEqual(refreshed, [200]);
+    } finally {
+      await chrome.close();
+      await new Promise((resolve) => server.close(resolve));
+    }
+  },
+);
+
+test(
+  "iPhone SE の横向きで1画面に収まり、更新しても一覧のスクロール位置を保つ",
+  { skip: chromePath === undefined && "Chrome が見つからない" },
+  async () => {
+    assert.ok(chromePath !== undefined);
+    const server = await startServer({
+      board: { snapshot: async (nowMs) => crowdedBoard(nowMs) },
+      host: "127.0.0.1",
+      port: 0,
+      allowedHosts: [],
+    });
+    const address = server.address();
+    assert.ok(address !== null && typeof address === "object");
+    const pageUrl = `http://127.0.0.1:${address.port}/`;
+    const chrome = await launchChrome(chromePath);
+    try {
+      const { cdp } = chrome;
+      await cdp.send("Page.enable");
+      await cdp.send("Emulation.setDeviceMetricsOverride", { width: 667, height: 375, deviceScaleFactor: 2, mobile: true });
+      await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: shortenRefreshInterval });
+      await cdp.send("Page.navigate", { url: pageUrl });
+      await waitUntilTrue(cdp, `location.href === ${JSON.stringify(pageUrl)} && document.readyState === "complete"`);
+      const layout = await evaluate(
+        cdp,
+        `(() => {
+          document.querySelector("main").dataset.probe = "before-refresh";
+          const live = document.querySelector(".live");
+          live.scrollTop = 120;
+          const right = Math.max(...[...document.querySelectorAll(".dial, .today")].map((element) => element.getBoundingClientRect().right));
+          return { scrollTop: live.scrollTop, right, overflowX: document.documentElement.scrollWidth - innerWidth, overflowY: document.documentElement.scrollHeight - innerHeight };
+        })()`,
+      );
+      assert.ok(isObject(layout));
+      assert.equal(numberAt(layout, "scrollTop"), 120);
+      assert.equal(numberAt(layout, "overflowX"), 0, "横にはみ出さない");
+      assert.equal(numberAt(layout, "overflowY"), 0, "縦にはみ出さない");
+      const right = numberAt(layout, "right");
+      assert.ok(right !== undefined && right <= 667, "計器と今日の金額が画面の中にある");
+      await waitUntilTrue(cdp, `document.querySelector("main").dataset.probe === undefined && document.body.dataset.offline === "false"`);
+      assert.equal(await evaluate(cdp, `document.querySelector(".live").scrollTop`), 120);
     } finally {
       await chrome.close();
       await new Promise((resolve) => server.close(resolve));

@@ -90,7 +90,7 @@ test("/ は HTML のダッシュボードを返す", async () => {
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /text\/html/);
   const html = await response.text();
-  assert.match(html, /残り\s*<strong>75%<\/strong>/);
+  assert.match(html, /残り<\/span><strong>75%<\/strong>/);
   assert.match(html, /\$20\.00/);
 });
 
