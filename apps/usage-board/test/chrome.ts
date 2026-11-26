@@ -63,6 +63,11 @@ async function connectCdp(url: string): Promise<{ cdp: Cdp; close(): void }> {
 
 export type Chrome = { cdp: Cdp; close(): Promise<void> };
 
+// Chrome の本体が終わっても、子プロセスがしばらくプロファイルに書き込み続ける
+export async function removeProfile(dir: string): Promise<void> {
+  await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+}
+
 export async function launchChrome(executable: string): Promise<Chrome> {
   const userDataDir = await tempDir("chrome");
   const chrome = spawn(
@@ -83,7 +88,7 @@ export async function launchChrome(executable: string): Promise<Chrome> {
   async function stop(): Promise<void> {
     chrome.kill();
     await exited;
-    await rm(userDataDir, { recursive: true, force: true });
+    await removeProfile(userDataDir);
   }
   try {
     const port = await waitFor(async () => {

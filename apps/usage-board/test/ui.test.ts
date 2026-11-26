@@ -156,8 +156,11 @@ describe("画面", { skip: chromePath === undefined && "Chrome が見つから�
   });
 
   after(async () => {
-    await chrome.close();
-    await server.close();
+    try {
+      await chrome.close();
+    } finally {
+      await server.close();
+    }
   });
 
   async function visit(options: { baseUrl?: string; query?: string; viewport?: Viewport } = {}): Promise<void> {
