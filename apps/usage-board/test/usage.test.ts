@@ -78,6 +78,20 @@ test("セッションごとの集計はサブエージェントの分も含め�
   assert.equal(summary.sessions[1]?.lastActivityMs, Date.parse("2026-11-26T01:30:00.000Z"));
 });
 
+test("セッションごとのトークンと金額は直近の期間の分だけを足す", () => {
+  const summary = summarizeUsage(
+    [
+      record({ messageId: "m1", sessionId: "s1", at: "2026-11-24T01:00:00.000Z", output: 3_000_000 }),
+      record({ messageId: "m2", sessionId: "s1", at: "2026-11-26T01:00:00.000Z", output: 1_000_000, project: null }),
+    ],
+    options,
+  );
+  assert.deepEqual(
+    summary.sessions.map((session) => [session.sessionId, session.project, session.totals.tokens.output, session.totals.costUsd]),
+    [["s1", "sample-project", 1_000_000, 20]],
+  );
+});
+
 test("セッションは上限の件数までにする", () => {
   const records = ["s1", "s2", "s3"].map((sessionId, index) =>
     record({ messageId: `m${index}`, sessionId, at: `2026-11-26T0${index}:00:00.000Z`, output: 1 }),

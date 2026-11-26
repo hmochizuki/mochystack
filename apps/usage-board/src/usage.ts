@@ -62,6 +62,7 @@ export function summarizeUsage(records: Iterable<UsageRecord>, options: SummaryO
   });
   const days = new Map(previousDates(dateKey.format(options.nowMs), options.days).map((date) => [date, emptyTotals()]));
   const sessions = new Map<string, SessionUsage>();
+  const sessionWindowStartMs = options.nowMs - options.sessionWindowMs;
   for (const record of records) {
     const day = days.get(dateKey.format(record.timestampMs));
     if (day !== undefined) add(day, record);
@@ -75,12 +76,12 @@ export function summarizeUsage(records: Iterable<UsageRecord>, options: SummaryO
     sessions.set(record.sessionId, session);
     session.project ??= record.project;
     session.lastActivityMs = Math.max(session.lastActivityMs, record.timestampMs);
-    add(session.totals, record);
+    if (record.timestampMs >= sessionWindowStartMs) add(session.totals, record);
   }
   return {
     days: [...days].map(([date, totals]) => ({ date, totals })),
     sessions: [...sessions.values()]
-      .filter((session) => session.lastActivityMs >= options.nowMs - options.sessionWindowMs)
+      .filter((session) => session.lastActivityMs >= sessionWindowStartMs)
       .sort((a, b) => b.lastActivityMs - a.lastActivityMs)
       .slice(0, options.sessionLimit),
   };
