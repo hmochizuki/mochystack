@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { readLiveSessions, type LiveSession } from "./live.ts";
 import { readRateLimits, type RateLimitsView } from "./rate-limits.ts";
 import { createTranscriptStore } from "./transcripts.ts";
+import { createSystemProbe, type SystemView } from "./system.ts";
 import { summarizeUsage, type UsageSummary } from "./usage.ts";
 
 export type Board = {
@@ -10,6 +11,7 @@ export type Board = {
   rateLimits: RateLimitsView;
   usage: { status: "loading" } | { status: "ready"; summary: UsageSummary };
   live: LiveSession[];
+  system: SystemView;
 };
 
 export type BoardConfig = {
@@ -22,6 +24,7 @@ const dayMs = 86_400_000;
 const shownDays = 14;
 
 export function createBoard(config: BoardConfig): { snapshot(nowMs: number): Promise<Board> } {
+  const systemProbe = createSystemProbe();
   const store = createTranscriptStore({ projectsDir: join(config.claudeDir, "projects"), windowMs: (shownDays + 1) * dayMs });
 
   async function usage(nowMs: number): Promise<Board["usage"]> {
@@ -44,7 +47,7 @@ export function createBoard(config: BoardConfig): { snapshot(nowMs: number): Pro
   return {
     async snapshot(nowMs) {
       const usageView = await usage(nowMs);
-      const [rateLimits, live] = await Promise.all([
+      const [rateLimits, live, system] = await Promise.all([
         readRateLimits(config.rateLimitsFile, nowMs),
         readLiveSessions({
           claudeDir: config.claudeDir,
@@ -52,8 +55,9 @@ export function createBoard(config: BoardConfig): { snapshot(nowMs: number): Pro
           finishedVisibleMs: 10 * 60_000,
           agentOutcome: store.warm ? store.agentOutcome : () => "unknown",
         }),
+        systemProbe.sample(),
       ]);
-      return { generatedAtMs: nowMs, timeZone: config.timeZone, rateLimits, usage: usageView, live };
+      return { generatedAtMs: nowMs, timeZone: config.timeZone, rateLimits, usage: usageView, live, system };
     },
   };
 }
