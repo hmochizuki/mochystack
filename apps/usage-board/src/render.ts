@@ -189,7 +189,7 @@ const style = `
 body{margin:0;background:var(--surface);color:var(--text);font:15px/1.45 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif}
 header{display:flex;justify-content:space-between;align-items:baseline;padding:12px 16px 0}
 header h1{font-size:17px;margin:0}
-body[data-offline="true"] header::after{content:"サーバーに接続できません";color:var(--critical)}
+body[data-offline="true"] header::after{content:"更新できません";color:var(--critical)}
 main{display:grid;gap:12px;padding:12px 16px 16px;grid-template-columns:1fr}
 @media (min-width:900px){
 body{height:100dvh;display:flex;flex-direction:column}
@@ -239,9 +239,13 @@ const refreshScript = `
 setInterval(async () => {
   try {
     const response = await fetch(location.pathname, { cache: "no-store" });
+    if (!response.ok) throw new Error(String(response.status));
     const next = new DOMParser().parseFromString(await response.text(), "text/html");
-    document.querySelector("main").replaceWith(next.querySelector("main"));
-    document.querySelector("#updated").replaceWith(next.querySelector("#updated"));
+    const main = next.querySelector("main");
+    const updated = next.querySelector("#updated");
+    if (main === null || updated === null) throw new Error("unexpected page");
+    document.querySelector("main").replaceWith(main);
+    document.querySelector("#updated").replaceWith(updated);
     document.body.dataset.offline = "false";
   } catch {
     document.body.dataset.offline = "true";
