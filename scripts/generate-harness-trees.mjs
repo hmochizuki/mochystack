@@ -11,6 +11,14 @@ const SKILLS = join(PSTACK, "skills");
 const OUT = join(ROOT, "dist");
 const HARNESSES = [
   { name: "Claude Code", tree: "claude-code", adapter: "docs/harness/claude-code.md", manifests: ["plugin.json", ".claude-plugin/plugin.json"] },
+  {
+    name: "Codex",
+    tree: "codex",
+    adapter: "docs/harness/codex.md",
+    manifests: ["plugin.json", ".codex-plugin/plugin.json"],
+    // Codex ignores `disable-model-invocation` and reads this file instead.
+    explicitOnly: { path: "agents/openai.yaml", text: "policy:\n  allow_implicit_invocation: false\n" },
+  },
 ];
 const GUIDE = "docs/guide";
 const COMMAND = "node scripts/generate-harness-trees.mjs";
@@ -18,9 +26,11 @@ const GITHUB = "https://github.com/cursor/plugins";
 const LINK = /\]\(([^)\s]+)\)/g;
 const README = `# harness trees
 
-This folder is generated from \`core/skills\`, \`core/agents\`, \`core/${GUIDE}\`, \`core/docs/harness/claude-code.md\`, \`core/README.md\`, \`core/LICENSE\`, and \`core/plugin.json\`. Do not edit it by hand.
+This folder is generated from \`core/skills\`, \`core/agents\`, \`core/${GUIDE}\`, \`core/docs/harness\`, \`core/README.md\`, \`core/LICENSE\`, and \`core/plugin.json\`. Do not edit it by hand.
 
-Cursor uses \`core/\` directly, and Claude Code installs \`claude-code/\`. The tree leaves out the rest of \`core/\`, such as \`core/automations\` and \`core/assets\`. A relative link to a core file that the tree leaves out points at that file on GitHub \`main\` instead.
+Cursor uses \`core/\` directly. Claude Code installs \`claude-code/\`, and Codex installs \`codex/\`. Each tree carries only its own adapter from \`core/docs/harness\` and leaves out the rest of \`core/\`, such as \`core/automations\` and \`core/assets\`. A relative link to a core file that the tree leaves out points at that file on GitHub \`main\` instead.
+
+Codex ignores the \`disable-model-invocation\` frontmatter, so \`codex/\` gives each skill that sets it an \`agents/openai.yaml\` that turns off implicit invocation.
 
 After editing those sources, run \`${COMMAND}\` from the repository root and commit the result.
 `;
@@ -81,7 +91,9 @@ function classify(skill) {
   }
   const text = readFileSync(join(dir, "SKILL.md"), "utf8");
   const wrap = usesCursorNames.size > 0 && /^# /m.test(text);
-  return { usesCursorNames, wrap };
+  const frontmatter = text.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? "";
+  const explicitOnly = /^disable-model-invocation:\s*true\s*$/m.test(frontmatter);
+  return { usesCursorNames, wrap, explicitOnly };
 }
 
 const classes = new Map(skills.map((skill) => [skill, classify(skill)]));
@@ -117,7 +129,7 @@ function has(files, path) {
   return files.has(path) || [...files.keys()].some((key) => key.startsWith(`${path}/`));
 }
 
-function render({ name, adapter, manifests }) {
+function render({ name, adapter, manifests, explicitOnly }) {
   // Skills read the adapter, the guide, and the README at runtime, so the harness never fetches them.
   const copies = [
     ...walk(SKILLS),
@@ -130,10 +142,13 @@ function render({ name, adapter, manifests }) {
   const line =
     `In ${name}, read [the ${name} adapter](../../${adapter}) once per session before you follow this skill. ` +
     `It maps the Cursor names in pstack skills to ${name}.`;
-  for (const [skill, { wrap }] of classes) {
+  for (const [skill, classified] of classes) {
     const path = `skills/${skill}/SKILL.md`;
     const text = files.get(path).bytes.toString("utf8");
-    if (wrap) files.get(path).bytes = Buffer.from(text.replace(/^(# .*)\n+/m, `$1\n\n${line}\n\n`));
+    if (classified.wrap) files.get(path).bytes = Buffer.from(text.replace(/^(# .*)\n+/m, `$1\n\n${line}\n\n`));
+    if (explicitOnly && classified.explicitOnly) {
+      files.set(`skills/${skill}/${explicitOnly.path}`, { bytes: Buffer.from(explicitOnly.text), executable: false });
+    }
   }
   files.set("LICENSE", file(join(PSTACK, "LICENSE")));
   for (const manifest of manifests) files.set(manifest, file(join(PSTACK, "plugin.json")));
