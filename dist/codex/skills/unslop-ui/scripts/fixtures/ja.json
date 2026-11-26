@@ -1,0 +1,25 @@
+{
+  "dashboard": {
+    "title": "ようこそ、{name}さん！",
+    "summary": "今月の予約は {count} 件です"
+  },
+  "members": {
+    "title": "メンバー一覧",
+    "description": "メンバーを一覧で確認できます。",
+    "searchPlaceholder": "名前で検索。Enter で確定します",
+    "empty": "メンバーがここに表示されます",
+    "inviteGuide": "招待の手順はこちら",
+    "deleteConfirm": "本当に削除しますか？",
+    "deleted": "メンバーを削除させていただきました"
+  },
+  "billing": {
+    "title": "請求書",
+    "description": "毎月25日に締め、翌月10日に発行します。",
+    "emailPlaceholder": "例：keiri@example.com"
+  },
+  "errors": {
+    "unknown": "エラーが発生しました。もう一度お試しください。",
+    "network": "おっと！通信できませんでした。",
+    "csv": "CSV の3行目で日付を読めませんでした。YYYY-MM-DD の形にしてください。"
+  }
+}
