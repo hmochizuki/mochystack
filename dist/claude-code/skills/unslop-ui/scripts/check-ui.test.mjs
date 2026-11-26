@@ -275,6 +275,32 @@ test("--base を付けると、基点から足した行と、追跡していな�
   }
 });
 
+test("--base は分岐元からの差分を見るので、基点のブランチで後から変わった行は拾わない", () => {
+  const root = mkdtempSync(join(tmpdir(), "unslop-ui-"));
+  const git = (...args) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", ...args], { cwd: root });
+  try {
+    git("init", "-q", "-b", "main");
+    git("config", "diff.noprefix", "true");
+    writeFileSync(join(root, "a.tsx"), `<p>保存しました！</p>\n`);
+    git("add", ".");
+    git("commit", "-q", "-m", "base");
+    git("switch", "-q", "-c", "feature");
+    writeFileSync(join(root, "b.tsx"), `<p>完了！</p>\n`);
+    git("add", ".");
+    git("commit", "-q", "-m", "feature");
+    git("switch", "-q", "main");
+    writeFileSync(join(root, "a.tsx"), `<p>保存しました</p>\n`);
+    git("commit", "-q", "-am", "main moves on");
+    git("switch", "-q", "feature");
+
+    const result = run(["--base", "main"], root);
+    assert.equal(result.status, 0);
+    assert.deepEqual(result.stdout.match(/^\S+:\d+ {2}[a-z-]+/gm), ["b.tsx:1  copy-exclamation"]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("--base の基点が無ければ終了コード2で終わる", () => {
   const root = repo();
   try {

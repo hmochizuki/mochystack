@@ -115,7 +115,7 @@ function stripComments(text) {
       }
       continue;
     }
-    // A URL such as https://… is not a comment, so `//` right after a colon stays text.
+    // https://… の `//` はコメントではないので、コロンの直後の `//` は文字のまま残す。
     if (text.startsWith("//", i) && text[i - 1] !== ":") state = "line";
     else if (text.startsWith("/*", i)) state = "block";
     else if (text.startsWith("<!--", i)) state = "html";
@@ -261,9 +261,12 @@ function git(args, cwd) {
 function changedLines(base, paths, cwd) {
   const top = git(["rev-parse", "--show-toplevel"], cwd).trim();
   const specs = paths.map((path) => relative(top, resolve(cwd, path)) || ".");
+  // 基点のブランチの先端と比べると、分岐した後に基点の側だけが変えた行まで拾ってしまう。
+  const fork = git(["merge-base", base, "HEAD"], top).trim();
   const changed = new Map();
   let current;
-  for (const row of git(["diff", "--unified=0", "--no-color", "--no-ext-diff", base, "--", ...specs], top).split("\n")) {
+  const diff = ["diff", "--unified=0", "--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/", fork, "--", ...specs];
+  for (const row of git(diff, top).split("\n")) {
     if (row.startsWith("+++ ")) {
       current = row === "+++ /dev/null" ? undefined : join(top, row.slice(6));
       if (current) changed.set(current, new Set());
