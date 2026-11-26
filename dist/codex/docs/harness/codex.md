@@ -11,7 +11,7 @@ These rows were checked against Codex CLI 0.144.1. Sources lists where each fact
 | `Task` | `spawn_agent`. It returns the agent id before the agent finishes. Collect the result with `wait_agent`, then call `close_agent`, because a finished agent counts toward the concurrency limit until you close it. `spawn_agent` spawns only when a user, `AGENTS.md`, or skill asks for subagents, and a pstack step that spawns an agent is that skill instruction. |
 | `AskQuestion` | `request_user_input`, which Codex offers only in Plan mode. In Default mode and in `codex exec`, ask in plain text. |
 | Open a todolist, or copy steps into the todolist tool | `update_plan`. |
-| Run another pstack skill (`/name` or "the **name** skill") | Read `<pstack>/skills/<name>/SKILL.md` and follow it. When you tell the user to type it, write `$pstack:<name>`. |
+| Run another pstack skill (`/name` or "the **name** skill") | Read `<pstack>/skills/<name>/SKILL.md` and follow it. When you tell the user to type it, write `$mochystack:<name>`. |
 | `Grep`, `Glob` | `rg` in the shell. |
 
 ## Subagent fields

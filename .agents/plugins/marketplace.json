@@ -5,7 +5,7 @@
   },
   "plugins": [
     {
-      "name": "pstack",
+      "name": "mochystack",
       "source": {
         "source": "local",
         "path": "./dist/codex"
