@@ -19,6 +19,13 @@ node src/main.ts
 | `USAGE_BOARD_RATE_LIMITS_FILE` | `~/claude-queue/usage.json` | プランの残りを読むファイル |
 | `USAGE_BOARD_HOST` | `127.0.0.1` | 待ち受けるアドレス。iPad から見るときは Tailscale の IP か `0.0.0.0` にする |
 | `USAGE_BOARD_PORT` | `4317` | 待ち受けるポート |
+| `USAGE_BOARD_ALLOWED_HOSTS` | なし | ほかに受け付ける Host の名前（カンマ区切り）。Tailscale の MagicDNS の名前で開くときなどに足す |
+
+Host ヘッダーの名前が次のどれでもないリクエストには 403 を返します。DNS リバインディングで、ほかのサイトのページからこのダッシュボードを読まれないようにするためです。
+
+- `localhost`、`127.0.0.1`、`::1`
+- 待ち受けるアドレス。`0.0.0.0` か `::` で待ち受けるときは、Mac のネットワークのアドレスすべて
+- `USAGE_BOARD_ALLOWED_HOSTS` の名前
 
 `0.0.0.0` で待ち受けると、同じネットワークにいる誰でもセッション名とプロジェクト名を見られます。
 

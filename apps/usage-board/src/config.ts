@@ -5,6 +5,7 @@ export type Config = {
   board: BoardConfig;
   host: string;
   port: number;
+  allowedHosts: string[];
 };
 
 function port(value: string | undefined): number {
@@ -25,5 +26,9 @@ export function configFromEnv(env: Record<string, string | undefined>, home: str
     },
     host: env["USAGE_BOARD_HOST"] ?? "127.0.0.1",
     port: port(env["USAGE_BOARD_PORT"]),
+    allowedHosts: (env["USAGE_BOARD_ALLOWED_HOSTS"] ?? "")
+      .split(",")
+      .map((host) => host.trim())
+      .filter((host) => host !== ""),
   };
 }

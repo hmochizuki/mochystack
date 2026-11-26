@@ -168,7 +168,12 @@ test(
   { skip: chromePath === undefined && "Chrome が見つからない" },
   async () => {
     assert.ok(chromePath !== undefined);
-    const server = await startServer({ board: { snapshot: async (nowMs) => crowdedBoard(nowMs) }, host: "127.0.0.1", port: 0 });
+    const server = await startServer({
+      board: { snapshot: async (nowMs) => crowdedBoard(nowMs) },
+      host: "127.0.0.1",
+      port: 0,
+      allowedHosts: [],
+    });
     const address = server.address();
     assert.ok(address !== null && typeof address === "object");
     const pageUrl = `http://127.0.0.1:${address.port}/`;

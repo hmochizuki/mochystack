@@ -8,6 +8,7 @@ test("環境変数が無ければ ~/.claude と ~/claude-queue/usage.json を読
   assert.equal(config.board.rateLimitsFile, "/home/someone/claude-queue/usage.json");
   assert.equal(config.host, "127.0.0.1");
   assert.equal(config.port, 4317);
+  assert.deepEqual(config.allowedHosts, []);
 });
 
 test("環境変数で読む場所と待ち受けを変える", () => {
@@ -17,6 +18,7 @@ test("環境変数で読む場所と待ち受けを変える", () => {
       USAGE_BOARD_RATE_LIMITS_FILE: "/data/usage.json",
       USAGE_BOARD_HOST: "0.0.0.0",
       USAGE_BOARD_PORT: "8080",
+      USAGE_BOARD_ALLOWED_HOSTS: "mac.tailnet.example, 192.168.1.20,",
     },
     "/home/someone",
   );
@@ -24,6 +26,7 @@ test("環境変数で読む場所と待ち受けを変える", () => {
   assert.equal(config.board.rateLimitsFile, "/data/usage.json");
   assert.equal(config.host, "0.0.0.0");
   assert.equal(config.port, 8080);
+  assert.deepEqual(config.allowedHosts, ["mac.tailnet.example", "192.168.1.20"]);
 });
 
 test("数字でないポートは受け付けない", () => {
