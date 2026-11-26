@@ -1,8 +1,10 @@
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { BoardConfig } from "./board.ts";
 
 export type Config = {
   board: BoardConfig;
+  uiFile: string;
   host: string;
   port: number;
   allowedHosts: string[];
@@ -24,6 +26,7 @@ export function configFromEnv(env: Record<string, string | undefined>, home: str
       rateLimitsFile: env["USAGE_BOARD_RATE_LIMITS_FILE"] ?? join(home, "claude-queue", "usage.json"),
       timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     },
+    uiFile: resolve(env["USAGE_BOARD_UI_FILE"] ?? fileURLToPath(new URL("../public/board.html", import.meta.url))),
     host: env["USAGE_BOARD_HOST"] ?? "127.0.0.1",
     port: port(env["USAGE_BOARD_PORT"]),
     allowedHosts: (env["USAGE_BOARD_ALLOWED_HOSTS"] ?? "")
