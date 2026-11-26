@@ -28,6 +28,7 @@ function crowdedBoard(nowMs: number): Board {
   return {
     generatedAtMs: nowMs,
     timeZone: "Asia/Tokyo",
+    system: { memoryUsedPercentage: 40, cpuBusyPercentage: 10 },
     rateLimits: { status: "unavailable", reason: "synthetic" },
     usage: {
       status: "ready",
@@ -47,8 +48,8 @@ function crowdedBoard(nowMs: number): Board {
       sessionId: `session-${index}`,
       name: `sample session ${index}`,
       project: "sample-project",
-      status: "busy",
-      waitingFor: null,
+      status: "waiting",
+      waitingFor: `permission needed ${index}`,
       startedAtMs: nowMs - 60 * minuteMs,
       statusUpdatedAtMs: nowMs - minuteMs,
       subagents: [],
@@ -233,7 +234,7 @@ test(
           document.querySelector("main").dataset.probe = "before-refresh";
           const live = document.querySelector(".live");
           live.scrollTop = 120;
-          const right = Math.max(...[...document.querySelectorAll(".dial, .today")].map((element) => element.getBoundingClientRect().right));
+          const right = Math.max(...[...document.querySelectorAll(".dial, .figure")].map((element) => element.getBoundingClientRect().right));
           return { scrollTop: live.scrollTop, right, overflowX: document.documentElement.scrollWidth - innerWidth, overflowY: document.documentElement.scrollHeight - innerHeight };
         })()`,
       );

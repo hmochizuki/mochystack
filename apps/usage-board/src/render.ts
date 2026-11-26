@@ -5,25 +5,10 @@ import type { DayUsage, UsageTotals } from "./usage.ts";
 
 type Tone = "good" | "warning" | "serious" | "critical" | "neutral";
 
-const sessionStatuses: Record<string, { label: string; tone: Tone }> = {
-  waiting: { label: "入力待ち", tone: "warning" },
-  busy: { label: "実行中", tone: "good" },
-  idle: { label: "待機", tone: "neutral" },
-};
-
 const htmlEntities: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 
 function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (char) => htmlEntities[char] ?? char);
-}
-
-function formatDuration(ms: number): string {
-  const minutes = Math.floor(ms / 60_000);
-  if (minutes < 1) return "1分未満";
-  if (minutes < 60) return `${minutes}分`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}時間${minutes % 60}分`;
-  return `${Math.floor(hours / 24)}日${hours % 24}時間`;
 }
 
 function formatAgo(ms: number): string {
@@ -41,10 +26,6 @@ function formatUsd(amount: number): string {
 function costLabel(totals: UsageTotals): string {
   const marker = totals.unpricedModels.length > 0 ? "+" : "";
   return `${formatUsd(totals.costUsd)}${marker}`;
-}
-
-function signal(label: string, tone: Tone): string {
-  return `<span class="signal" data-tone="${tone}">${escapeHtml(label)}</span>`;
 }
 
 function clock(ms: number, timeZone: string): string {
@@ -76,40 +57,56 @@ ${filled > 0 ? `<circle class="level" cx="60" cy="60" r="54" pathLength="100" st
 </svg>`;
 }
 
+function remainingClock(ms: number): string {
+  const minutes = Math.max(Math.floor(ms / 60_000), 0);
+  const hours = Math.floor(minutes / 60);
+  if (hours >= 24) return `${Math.floor(hours / 24)}日${hours % 24}時間`;
+  return `${hours}:${String(minutes % 60).padStart(2, "0")}`;
+}
+
 function dial(title: string, window: RateWindowView, board: Board): string {
   if (window.state === "absent") {
-    return `<section class="dial" data-tone="neutral"><div class="gauge">${dialFace(null)}<p class="reading"><span class="unit">値なし</span></p></div>
-<h3>${title}</h3><p class="note">statusline の入力に入っていない</p></section>`;
+    return `<section class="dial" data-tone="neutral"><div class="gauge">${dialFace(null)}<p class="reading"><span class="unit">値なし</span></p></div><h3>${title}</h3></section>`;
   }
   if (window.state === "reset") {
-    return `<section class="dial" data-tone="neutral"><div class="gauge">${dialFace(100)}<p class="reading"><span class="unit">リセット済み</span></p></div>
-<h3>${title}</h3><p class="note">${clock(window.resetsAtMs, board.timeZone)} にリセット</p></section>`;
+    return `<section class="dial" data-tone="neutral"><div class="gauge">${dialFace(100)}<p class="reading"><span class="unit">リセット済み</span></p></div><h3>${title}</h3></section>`;
   }
   const remaining = Math.max(0, Math.min(100, 100 - window.usedPercentage));
   const tone: Tone = remaining < 5 ? "critical" : remaining < 20 ? "warning" : "good";
-  return `<section class="dial" data-tone="${tone}">
+  return `<section class="dial" data-tone="${tone}" title="${clock(window.resetsAtMs, board.timeZone)} にリセット">
 <div class="gauge" role="meter" aria-label="${title}の残り" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(remaining)}">${dialFace(remaining)}
-<p class="reading"><span class="unit">残り</span><strong>${Math.round(remaining)}%</strong></p></div>
+<p class="reading"><span class="value"><strong>${Math.round(remaining)}</strong><span class="pct">%</span></span></p></div>
 <h3>${title}</h3>
-<p class="note">リセットまで ${formatDuration(window.resetsAtMs - board.generatedAtMs)}</p>
-<p class="note faint">${clock(window.resetsAtMs, board.timeZone)}</p>
+<p class="note">あと ${remainingClock(window.resetsAtMs - board.generatedAtMs)}</p>
 </section>`;
 }
 
-function footer(board: Board, captured: string): string {
-  return `<p class="foot">${captured}<span id="updated">${clock(board.generatedAtMs, board.timeZone)} 更新</span></p>`;
+function clockFace(board: Board): string {
+  const time = new Intl.DateTimeFormat("ja-JP", { timeZone: board.timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(board.generatedAtMs);
+  const date = new Intl.DateTimeFormat("ja-JP", { timeZone: board.timeZone, month: "numeric", day: "numeric", weekday: "short" }).format(board.generatedAtMs);
+  return `<p class="clock"><time id="clock" data-time-zone="${escapeHtml(board.timeZone)}">${time}</time><span class="date">${date}</span></p>`;
+}
+
+function systemMeter(label: string, percentage: number | null): string {
+  const tone: Tone = percentage === null ? "neutral" : percentage >= 95 ? "critical" : percentage >= 85 ? "warning" : "good";
+  return `<p class="meter" data-tone="${tone}"><span class="unit">${label}</span><span class="track"><span style="width:${percentage ?? 0}%"></span></span><strong>${percentage === null ? "-" : `${percentage}%`}</strong></p>`;
+}
+
+function systemPanel(board: Board): string {
+  return `<div class="system">${systemMeter("メモリ", board.system.memoryUsedPercentage)}${systemMeter("CPU", board.system.cpuBusyPercentage)}</div>`;
 }
 
 function limitsPanel(board: Board): string {
   const { rateLimits } = board;
   if (rateLimits.status === "unavailable") {
-    return `<section class="panel limits"><h2>プランの残り</h2><p class="lead">取得できません</p><p class="note">${escapeHtml(rateLimits.reason)}</p>${footer(board, "")}</section>`;
+    return `<section class="panel limits">${clockFace(board)}<div class="dials"><div><p class="lead">残りを取得できません</p><p class="note">${escapeHtml(rateLimits.reason)}</p></div></div>${systemPanel(board)}</section>`;
   }
   const age = board.generatedAtMs - rateLimits.capturedAtMs;
   return `<section class="panel limits">
-<h2>プランの残り</h2>
+${clockFace(board)}
 <div class="dials">${dial("5時間枠", rateLimits.fiveHour, board)}${dial("週の枠", rateLimits.sevenDay, board)}</div>
-${footer(board, `<span${age > 15 * 60_000 ? ' data-stale="true"' : ""}>${formatAgo(age)}に取得</span>`)}
+${age > 15 * 60_000 ? `<p class="note" data-stale="true">${formatAgo(age)}のデータ</p>` : ""}
+${systemPanel(board)}
 </section>`;
 }
 
@@ -125,41 +122,32 @@ function sparkBar(day: DayUsage, maxCost: number, isToday: boolean): string {
 
 function usagePanel(board: Board): string {
   if (board.usage.status === "loading") {
-    return `<section class="panel usage"><p class="figure"><span class="unit">今日</span><strong class="pending">集計中</strong></p><p class="note">起動直後は過去の記録を読み込んでいる</p></section>`;
+    return `<section class="panel usage"><p class="figure"><span class="unit">今日</span><strong class="pending">集計中</strong></p></section>`;
   }
   const { days } = board.usage.summary;
   const today = days.at(-1);
   const maxCost = Math.max(...days.map((day) => day.totals.costUsd));
   const unpriced = [...new Set(days.flatMap((day) => day.totals.unpricedModels))];
-  const total = days.reduce((sum, day) => sum + day.totals.costUsd, 0);
+  const hint = `API の定価で換算した推定額${unpriced.length > 0 ? `。単価不明: ${unpriced.join(", ")}（含めていない）` : ""}`;
   return `<section class="panel usage">
-<div class="today">
-<p class="figure"><span class="unit">今日</span><strong>${today ? costLabel(today.totals) : "-"}</strong></p>
-<div class="trend"><ol class="spark" aria-label="${days.length}日間の金額">${days.map((day) => sparkBar(day, maxCost, day === today)).join("")}</ol>
-<p class="note faint">${days.length}日間で ${formatUsd(total)}</p></div>
-</div>
-<p class="note faint">API の定価で換算した推定額${unpriced.length > 0 ? `。単価不明: ${escapeHtml(unpriced.join(", "))}（含めていない）` : ""}</p>
+<p class="figure" title="${escapeHtml(hint)}"><span class="unit">今日</span><strong>${today ? costLabel(today.totals) : "-"}</strong></p>
+<ol class="spark" aria-label="${days.length}日間の金額">${days.map((day) => sparkBar(day, maxCost, day === today)).join("")}</ol>
 </section>`;
 }
 
-function liveRow(session: LiveSession, board: Board): string {
-  const status = sessionStatuses[session.status] ?? { label: session.status, tone: "neutral" };
-  const running = session.subagents.filter((subagent) => subagent.state === "running").length;
-  const since = session.statusUpdatedAtMs === null ? "" : formatAgo(board.generatedAtMs - session.statusUpdatedAtMs);
-  return `<li data-tone="${status.tone}">
-<div class="head"><span class="title">${escapeHtml(session.name ?? session.project ?? session.sessionId.slice(0, 8))}</span>${signal(status.label, status.tone)}</div>
-<div class="meta">${since === "" ? "" : `<span>${since}</span>`}${running > 0 ? `<span>サブエージェント ${running}</span>` : ""}</div>
-${session.waitingFor === null ? "" : `<div class="waiting">${escapeHtml(session.waitingFor)}</div>`}
+function waitingRow(session: LiveSession): string {
+  return `<li>
+<span class="title">${escapeHtml(session.name ?? session.project ?? session.sessionId.slice(0, 8))}</span>
+${session.waitingFor === null ? "" : `<span class="waiting">${escapeHtml(session.waitingFor)}</span>`}
 </li>`;
 }
 
 function livePanel(board: Board): string {
-  const shown = board.live.filter((session) => session.status === "waiting" || session.status === "busy");
-  const rest = board.live.length - shown.length;
+  const waiting = board.live.filter((session) => session.status === "waiting");
+  const busy = board.live.filter((session) => session.status === "busy").length;
   return `<section class="panel live">
-<ul class="sessions">${shown.map((session) => liveRow(session, board)).join("")}</ul>
-${shown.length === 0 ? `<p class="note">動いているセッションはない</p>` : ""}
-${rest > 0 ? `<p class="note faint rest">ほか ${rest}件（待機中など）</p>` : ""}
+<p class="busy"><strong>${busy}</strong> <span class="unit">実行中</span></p>
+${waiting.length === 0 ? "" : `<ul class="sessions" aria-label="入力待ち">${waiting.map(waitingRow).join("")}</ul>`}
 </section>`;
 }
 
@@ -173,16 +161,13 @@ main{height:100dvh;display:grid;grid-template-columns:288px minmax(0,1fr);grid-t
 .limits{grid-row:1/3;display:flex;flex-direction:column;padding-bottom:10px;border-right:1px solid var(--line)}
 .usage{grid-column:2;grid-row:1;padding-bottom:10px;border-bottom:1px solid var(--line);margin:0 4px}
 .live{grid-column:2;grid-row:2;overflow-y:auto;padding-top:10px;margin:0 4px}
-h2{font-size:12px;font-weight:600;color:var(--muted);margin:0;letter-spacing:.04em}
 h3{font-size:13px;font-weight:600;margin:0 0 2px}
 p{margin:0}
 .note{font-size:12px;color:var(--muted)}
 .faint{color:var(--faint)}
 [data-stale="true"]{color:var(--serious)}
-.lead{font-size:20px;margin:8px 0 4px}
 .dials{display:grid;grid-template-columns:1fr 1fr;gap:12px;flex:1;align-content:center}
 .dial{text-align:center}
-.dial .note{font-size:11px;white-space:nowrap}
 .gauge{position:relative;width:100%;max-width:128px;margin:0 auto 4px}
 .face{display:block;width:100%;height:auto}
 .ticks{stroke:var(--faint);stroke-width:1;stroke-linecap:round}
@@ -192,67 +177,76 @@ p{margin:0}
 .dial[data-tone="critical"] .level{stroke:var(--critical)}
 .dial[data-tone="neutral"] .ticks{stroke:var(--line)}
 .reading{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding-top:4px}
-.reading .unit{font-size:11px;color:var(--muted)}
-.reading strong{font:200 38px/1 var(--numeral);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
 .dial[data-tone="warning"] .reading strong{color:var(--warning)}
 .dial[data-tone="critical"] .reading strong{color:var(--critical)}
-.foot{display:flex;justify-content:space-between;gap:8px;font-size:11px;color:var(--faint);margin-top:8px}
-.today{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:4px}
-.figure{display:flex;flex-direction:column}
-.figure .unit{font-size:11px;color:var(--muted)}
-.figure strong{font:200 40px/1 var(--numeral);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
-.figure .pending{font-size:22px;margin:6px 0 4px}
-.trend{text-align:right}
-.spark{list-style:none;margin:0 0 4px;padding:0;display:flex;align-items:flex-end;gap:3px;height:34px}
-.spark li{width:6px;height:100%;display:flex;align-items:flex-end}
 .spark li span{display:block;width:100%;border-radius:1px;background:var(--faint)}
 .spark li[data-today="true"] span{background:var(--lume);box-shadow:0 0 6px color-mix(in srgb,var(--lume) 60%,transparent)}
 .sessions{list-style:none;margin:0;padding:0}
-.sessions>li{padding:7px 0;border-top:1px solid var(--line)}
-.sessions>li:first-child{border-top:0;padding-top:0}
-.head{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.lead{font-size:18px;margin-bottom:4px}
+.dial .note{font:300 13px/1.3 var(--numeral);color:var(--muted);font-variant-numeric:tabular-nums}
+.reading strong{font:200 40px/1 var(--numeral);font-variant-numeric:tabular-nums;letter-spacing:-.03em}
+.value{display:inline-flex;align-items:flex-start}
+.reading .pct{font:300 14px/1 var(--numeral);color:var(--muted);margin:3px 0 0 2px}
+.reading .unit{font-size:12px;color:var(--muted)}
+.figure{display:flex;align-items:baseline;gap:10px}
+.unit{font-size:12px;color:var(--muted)}
+.figure strong{font:200 44px/1 var(--numeral);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.figure .pending{font-size:22px}
+.spark{list-style:none;margin:10px 0 0;padding:0;display:flex;align-items:flex-end;gap:3px;height:28px}
+.spark li{flex:1;max-width:10px;height:100%;display:flex;align-items:flex-end}
+.busy{display:flex;align-items:baseline;gap:6px;margin-bottom:10px}
+.busy strong{font:200 32px/1 var(--numeral);color:var(--lume);font-variant-numeric:tabular-nums}
+.sessions>li{display:flex;flex-direction:column;padding:8px 0 8px 10px;border-left:2px solid var(--warning);margin-bottom:8px}
 .title{font-weight:600;overflow-wrap:anywhere}
-.meta{display:flex;flex-wrap:wrap;column-gap:10px;font-size:12px;color:var(--faint)}
-.meta:empty{display:none}
-.signal{flex:none;font-size:12px;color:var(--muted);display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
-.signal::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--faint)}
-.signal[data-tone="good"]{color:var(--lume)}
-.signal[data-tone="good"]::before{background:var(--lume);box-shadow:0 0 6px var(--lume)}
-.signal[data-tone="warning"]{color:var(--warning)}
-.signal[data-tone="warning"]::before{background:var(--warning);box-shadow:0 0 6px var(--warning)}
-.waiting{margin-top:4px;padding-left:9px;border-left:2px solid var(--warning);font-size:13px}
-.rest{margin-top:8px}
-body[data-offline="true"] #updated::after{content:" 更新できません";color:var(--critical)}
+.waiting{font-size:13px;color:var(--muted);overflow-wrap:anywhere}
+.clock{display:flex;align-items:baseline;gap:8px}
+.clock time{font:200 30px/1 var(--numeral);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.clock .date{font-size:12px;color:var(--muted)}
+.system{display:grid;gap:6px;margin-top:8px}
+.meter{display:grid;grid-template-columns:3.2em 1fr 2.8em;align-items:center;gap:8px}
+.meter .track{height:3px;border-radius:2px;background:var(--rim);overflow:hidden}
+.meter .track span{display:block;height:100%;background:var(--muted)}
+.meter[data-tone="warning"] .track span{background:var(--warning)}
+.meter[data-tone="critical"] .track span{background:var(--critical)}
+.meter strong{font:300 13px/1 var(--numeral);text-align:right;font-variant-numeric:tabular-nums}
+.meter[data-tone="warning"] strong{color:var(--warning)}
+.meter[data-tone="critical"] strong{color:var(--critical)}
+body[data-offline="true"] .limits::after{content:"更新できません";font-size:12px;color:var(--critical)}
 @media (min-width:960px){
 main{grid-template-columns:360px minmax(0,1fr)}
 .dials{grid-template-columns:1fr;gap:32px}
 .gauge{max-width:200px}
-.reading strong{font-size:58px}
-.reading .unit{font-size:13px}
 .dial h3{font-size:15px}
-.dial .note{font-size:13px}
-.figure strong{font-size:64px}
-.spark{height:56px;gap:5px}
-.spark li{width:10px}
+.dial .note{font-size:15px}
+.reading strong{font-size:64px}
+.figure strong{font-size:72px}
+.spark{height:48px;gap:5px}
+.spark li{max-width:14px}
 body{font-size:16px}
 }
 `;
 
 const refreshScript = `
+function tick() {
+  const clock = document.querySelector("#clock");
+  if (clock === null) return;
+  clock.textContent = new Intl.DateTimeFormat("ja-JP", { timeZone: clock.dataset.timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(Date.now());
+}
+setInterval(tick, 5000);
 setInterval(async () => {
   try {
     const response = await fetch(location.pathname, { cache: "no-store" });
     if (!response.ok) throw new Error(String(response.status));
     const next = new DOMParser().parseFromString(await response.text(), "text/html");
     const main = next.querySelector("main");
-    const updated = next.querySelector("#updated");
-    if (main === null || updated === null) throw new Error("unexpected page");
+    if (main === null) throw new Error("unexpected page");
     const current = document.querySelector("main");
     const scrollLeft = current.scrollLeft;
     const scrollTops = new Map(Array.from(current.querySelectorAll(".panel"), (panel) => [panel.className, panel.scrollTop]));
     current.replaceWith(main);
     main.scrollLeft = scrollLeft;
     for (const panel of main.querySelectorAll(".panel")) panel.scrollTop = scrollTops.get(panel.className) ?? 0;
+    tick();
     document.body.dataset.offline = "false";
   } catch {
     document.body.dataset.offline = "true";
