@@ -337,7 +337,7 @@ describe("画面", { skip: chromePath === undefined && "Chrome が見つから�
         },
       }),
     );
-    assert.equal(await text("[data-stale=true]"), "20分前のデータ");
+    assert.equal(await text("[data-stale=true]"), "update: 20m ago");
     assert.deepEqual(await texts(".plan .reading"), ["83%", "-"]);
     assert.deepEqual(await texts(".plan .reset"), ["↻ 13:01"]);
     assert.deepEqual(numbersOrNulls(await evaluate(cdp, `(${gaugeReadings})("needle")`)).map((value) => value === null), [false, true]);
